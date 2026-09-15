@@ -3,8 +3,8 @@ set -euo pipefail
 
 for argument in "$@"; do
   case "$argument" in
-    --validator|--validator=*)
-      echo "error: --validator is fixed to surfpool" >&2
+    --skip-local-validator|--validator|--validator=*|--provider.cluster|--provider.cluster=*|--provider.url|--provider.url=*)
+      echo "error: $argument is fixed for mainnet-backed Surfpool" >&2
       exit 2
       ;;
   esac

@@ -71,8 +71,8 @@ directory after confirming its contents are copied.
 - [ ] **Step 2: Pin the toolchain and package manager**
 
 Set the workspace configuration to Anchor `1.1.2`, Solana `3.1.10`, Yarn, and
-the local Surfpool provider. Keep `anchor build` and `anchor test` independent
-of a public cluster.
+the local Surfpool provider. Chain-dependent Anchor tests must run through
+mainnet-backed Surfpool.
 
 - [ ] **Step 3: Write the failing workspace smoke test**
 
