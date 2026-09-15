@@ -56,6 +56,25 @@ prevents the test command from falling back to the legacy
 yarn test:anchor
 ```
 
+## Live Kamino Discovery
+
+The discovery client uses the Kamino API only for reserve candidates. It reads
+the reserve, mint, oracle, and token-program state from the local mainnet-backed
+Surfpool RPC before returning a supply-enabled reserve. Supply the deployment
+market and address-book accounts explicitly:
+
+```bash
+ARANCIO_KAMINO_MARKET="$KAMINO_MARKET" \
+ARANCIO_PROGRAM_ID="$ARANCIO_PROGRAM_ID" \
+ARANCIO_ADDRESS_BOOK="$ARANCIO_ADDRESS_BOOK" \
+ARANCIO_RPC_URL=http://127.0.0.1:8899 \
+  yarn mocha tests/discovery.ts
+```
+
+`ARANCIO_KAMINO_API_URL` may override the Kamino API host when required. The
+client does not identify assets by symbols or embed token, protocol, or market
+IDs.
+
 Build the empty bootstrap program:
 
 ```bash
