@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anchor-lang/core": "1.1.2",
+    "@meteora-ag/dynamic-bonding-curve-sdk": "^1.5.12",
     "@solana/spl-token": "^0.4.13",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",

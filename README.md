@@ -69,5 +69,22 @@ Point the wallet RPC at `http://127.0.0.1:8899` (Phantom: developer settings /
 custom RPC). Landing explains the split; `/app` lists xStock / PT / YT and runs
 `wrap` when registry + strip market exist.
 
+### Meteora DBC → DAMM v2 (feat/damm-meteora)
+
+After wrap, **Launch YT on Meteora DBC** builds an equity-strip curve via
+`@meteora-ag/dynamic-bonding-curve-sdk`:
+
+- initial market cap ≈ f(fair coupon `1 − Yₛ/Yₜ`)
+- migration market cap ≈ 10× initial
+- `MigrationOption.MET_DAMM_V2`, quote = WSOL
+- pool address stored locally; link to https://migrator.meteora.ag
+
+```bash
+cd web && npm install && npm run dev
+```
+
+Requires Surfpool/mainnet-fork RPC so the DBC program
+`dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN` is reachable.
+
 Kamino lending is **not** integrated. Jupiter program id remains in the arancio
 address book for a later swap path.

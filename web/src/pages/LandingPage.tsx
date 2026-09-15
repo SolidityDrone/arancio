@@ -128,6 +128,17 @@ export function LandingPage() {
               </p>
             </div>
           </article>
+          <article className="usecase">
+            <div className="tag">Meteora</div>
+            <div>
+              <h3>YT launch on DBC → DAMM v2</h3>
+              <p>
+                Each yield window gets a Dynamic Bonding Curve listing seeded
+                from the registry fair coupon, then graduates to DAMM v2 for
+                lasting liquidity — equity-strip discovery, not memecoin meta.
+              </p>
+            </div>
+          </article>
         </div>
       </section>
 
