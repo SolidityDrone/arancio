@@ -45,6 +45,6 @@ Build the empty bootstrap program:
 anchor build
 ```
 
-Anchor's Surfpool test configuration is offline and does not require a public
-cluster. The direct smoke-test launcher remains available for validating the
-standalone Surfpool RPC.
+Anchor's Surfpool test configuration uses Surfpool's mainnet-backed datasource
+while keeping the RPC local. The direct smoke-test launcher remains available
+for validating the standalone Surfpool RPC.

@@ -20,7 +20,7 @@ shutdown_wait = 2000
 rpc_port = 8899
 ws_port = 8900
 host = "127.0.0.1"
-online = false
+online = true
 
 [scripts]
 test = "yarn ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
