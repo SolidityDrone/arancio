@@ -24,4 +24,6 @@ pub enum ArancioError {
     AddressBookFrozen,
     #[msg("address book does not match the program PDA")]
     InvalidAddressBook,
+    #[msg("token program does not match the frozen address book")]
+    InvalidTokenProgram,
 }

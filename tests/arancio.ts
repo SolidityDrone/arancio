@@ -79,7 +79,6 @@ const idl = {
         { name: "vaultAuthority" },
         { name: "tokenProgram" },
         { name: "systemProgram" },
-        { name: "rent" },
       ],
       args: [
         { name: "name", type: { vec: "u8" } },
@@ -121,22 +120,68 @@ const idl = {
   ],
 };
 
-const expectFailure = async (operation: Promise<unknown>) => {
+const expectAnchorError = async (
+  operation: Promise<unknown>,
+  expectedCode: string
+) => {
   try {
     await operation;
-  } catch {
+  } catch (error: any) {
+    const actualCode = error?.error?.errorCode?.code ?? error?.errorCode?.code;
+    expect(actualCode, error?.message).to.equal(expectedCode);
     return;
   }
-  throw new Error("expected the transaction to fail");
+  throw new Error(`expected the transaction to fail with ${expectedCode}`);
 };
 
 const randomProgramIds = () => ({
   kaminoProgram: Keypair.generate().publicKey,
   jupiterProgram: Keypair.generate().publicKey,
-  tokenProgram: Keypair.generate().publicKey,
+  tokenProgram: TOKEN_PROGRAM_ID,
   token2022Program: Keypair.generate().publicKey,
   associatedTokenProgram: Keypair.generate().publicKey,
 });
+
+const decodeAddressBook = (data: Buffer) => {
+  let offset = 8;
+  const authority = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const readPubkey = () => {
+    const value = new PublicKey(data.subarray(offset, offset + 32));
+    offset += 32;
+    return value;
+  };
+  return {
+    authority,
+    kaminoProgram: readPubkey(),
+    jupiterProgram: readPubkey(),
+    tokenProgram: readPubkey(),
+    token2022Program: readPubkey(),
+    associatedTokenProgram: readPubkey(),
+    frozen: data[offset] === 1,
+  };
+};
+
+const addressBookReferences = (
+  addressBook: ReturnType<typeof decodeAddressBook>
+) =>
+  [
+    addressBook.kaminoProgram,
+    addressBook.jupiterProgram,
+    addressBook.tokenProgram,
+    addressBook.token2022Program,
+    addressBook.associatedTokenProgram,
+  ].map((key) => key.toBase58());
+
+const waitForBalance = async (connection: Connection, publicKey: PublicKey) => {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    if ((await connection.getBalance(publicKey, "processed")) > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`airdrop did not fund ${publicKey.toBase58()}`);
+};
 
 const decodeVaultConfig = (data: Buffer) => {
   let offset = 8 + 32;
@@ -198,11 +243,8 @@ describe("Arancio workspace", () => {
     };
 
     before(async () => {
-      const airdrop = await provider.connection.requestAirdrop(
-        payer,
-        2_000_000_000
-      );
-      await provider.connection.confirmTransaction(airdrop, "confirmed");
+      await provider.connection.requestAirdrop(payer, 2_000_000_000);
+      await waitForBalance(provider.connection, payer);
       programIds = randomProgramIds();
       if (!(await provider.connection.getAccountInfo(addressBook))) {
         await (program.methods as any)
@@ -225,6 +267,18 @@ describe("Arancio workspace", () => {
           })
           .rpc();
       }
+
+      const account = await provider.connection.getAccountInfo(addressBook);
+      expect(account).not.to.equal(null);
+      const decoded = decodeAddressBook(account!.data);
+      expect(addressBookReferences(decoded)).to.deep.equal(
+        addressBookReferences({
+          authority: payer,
+          ...programIds,
+          frozen: false,
+        })
+      );
+      expect(decoded.frozen).to.equal(false);
     });
 
     it("rejects a vault before the address book is frozen", async () => {
@@ -244,9 +298,17 @@ describe("Arancio workspace", () => {
         [Buffer.from("vault-authority"), vaultConfig.toBuffer()],
         PROGRAM_ID
       );
-      await expectFailure(
+      await expectAnchorError(
         (program.methods as any)
-          .createVault(name, Keypair.generate().publicKey, [])
+          .createVault(name, Keypair.generate().publicKey, [
+            {
+              mint: Keypair.generate().publicKey,
+              reserve: Keypair.generate().publicKey,
+              collateralMint: Keypair.generate().publicKey,
+              oracle: Keypair.generate().publicKey,
+              weightBps: 10_000,
+            },
+          ])
           .accounts({
             payer,
             globalConfig,
@@ -256,26 +318,47 @@ describe("Arancio workspace", () => {
             vaultAuthority,
             tokenProgram: TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
-            rent: web3.SYSVAR_RENT_PUBKEY,
           })
-          .rpc()
+          .rpc(),
+        "AddressBookNotFrozen"
       );
     });
 
     it("stores exact named vault configuration and rejects updates after freezing", async () => {
-      if (!(await addressBookIsFrozen())) {
-        await (program.methods as any)
-          .freezeAddressBook()
-          .accounts({ authority: payer, addressBook })
-          .rpc();
-      }
+      const beforeFreezeAccount = await provider.connection.getAccountInfo(
+        addressBook
+      );
+      const beforeFreeze = decodeAddressBook(beforeFreezeAccount!.data);
+      expect(beforeFreeze.frozen).to.equal(false);
 
-      await expectFailure(
+      await (program.methods as any)
+        .freezeAddressBook()
+        .accounts({ authority: payer, addressBook })
+        .rpc();
+
+      const afterFreeze = decodeAddressBook(
+        (await provider.connection.getAccountInfo(addressBook))!.data
+      );
+      expect(addressBookReferences(afterFreeze)).to.deep.equal(
+        addressBookReferences(beforeFreeze)
+      );
+      expect(afterFreeze.frozen).to.equal(true);
+
+      await expectAnchorError(
         (program.methods as any)
           .updateAddressBook(randomProgramIds())
           .accounts({ authority: payer, addressBook })
-          .rpc()
+          .rpc(),
+        "AddressBookFrozen"
       );
+
+      const afterRejectedUpdate = decodeAddressBook(
+        (await provider.connection.getAccountInfo(addressBook))!.data
+      );
+      expect(addressBookReferences(afterRejectedUpdate)).to.deep.equal(
+        addressBookReferences(beforeFreeze)
+      );
+      expect(afterRejectedUpdate.frozen).to.equal(true);
 
       const name = Buffer.from(
         `named-${Keypair.generate().publicKey.toBase58().slice(0, 12)}`
@@ -316,7 +399,6 @@ describe("Arancio workspace", () => {
           vaultAuthority,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
-          rent: web3.SYSVAR_RENT_PUBKEY,
         })
         .rpc();
 
@@ -336,6 +418,51 @@ describe("Arancio workspace", () => {
           TOKEN_PROGRAM_ID
         )
       ).to.equal(true);
+    });
+
+    it("requires the configured token program for share-mint creation", async () => {
+      const name = Buffer.from(
+        `token-${Keypair.generate().publicKey.toBase58().slice(0, 12)}`
+      );
+      const inputMint = Keypair.generate().publicKey;
+      const components = [
+        {
+          mint: Keypair.generate().publicKey,
+          reserve: Keypair.generate().publicKey,
+          collateralMint: Keypair.generate().publicKey,
+          oracle: Keypair.generate().publicKey,
+          weightBps: 10_000,
+        },
+      ];
+      const [vaultConfig] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault"), name],
+        PROGRAM_ID
+      );
+      const [shareMint] = PublicKey.findProgramAddressSync(
+        [Buffer.from("share-mint"), vaultConfig.toBuffer()],
+        PROGRAM_ID
+      );
+      const [vaultAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault-authority"), vaultConfig.toBuffer()],
+        PROGRAM_ID
+      );
+
+      await expectAnchorError(
+        (program.methods as any)
+          .createVault(Array.from(name), inputMint, components)
+          .accounts({
+            payer,
+            globalConfig,
+            addressBook,
+            vaultConfig,
+            shareMint,
+            vaultAuthority,
+            tokenProgram: SystemProgram.programId,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc(),
+        "InvalidTokenProgram"
+      );
     });
   });
 });

@@ -22,6 +22,11 @@ terminal:
 ./scripts/start-surfpool.sh
 ```
 
+The launcher uses an isolated in-memory database by default, so configuration
+tests can be rerun without deleting state. Set `ARANCIO_SURFPOOL_DB` to an
+explicit SQLite path when persistence is needed; the datasource remains
+mainnet-backed in either case.
+
 The tests use `ARANCIO_RPC_URL` when set, otherwise they connect to
 `http://127.0.0.1:8899`.
 The smoke test compares the local RPC genesis hash with the fixed official
@@ -31,6 +36,16 @@ Run the direct workspace smoke test:
 
 ```bash
 yarn mocha tests/arancio.ts --grep "workspace smoke"
+```
+
+Run the immutable-configuration tests against a fresh isolated Surfpool
+instance without deleting any database state:
+
+```bash
+ARANCIO_SURFPOOL_DB=:memory: ./scripts/start-surfpool.sh
+ARANCIO_RPC_URL=http://127.0.0.1:8899 \
+  yarn mocha -t 1000000 tests/arancio.ts \
+  --grep "configuration|named vault|immutable"
 ```
 
 Run Anchor integration tests only through the explicit Surfpool wrapper. This

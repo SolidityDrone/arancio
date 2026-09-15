@@ -20,4 +20,16 @@ PATH="$fake_surfpool_directory:$PATH" \
   ARANCIO_SURFPOOL_DB="$isolated_database" \
   "$repository_root/scripts/start-surfpool.sh"
 
-set -- $(<"$surfpool_called")
+mapfile -t actual_arguments <"$surfpool_called"
+expected_arguments=(
+  start
+  --network
+  mainnet
+  --db
+  "$isolated_database"
+  --no-tui
+)
+test "${#actual_arguments[@]}" -eq "${#expected_arguments[@]}"
+for index in "${!expected_arguments[@]}"; do
+  test "${actual_arguments[$index]}" = "${expected_arguments[$index]}"
+done

@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token};
+use anchor_spl::{
+    token::Mint,
+    token_interface::{self, InitializeMint2},
+};
 
 use crate::{
     errors::ArancioError,
@@ -30,20 +33,20 @@ pub struct CreateVault<'info> {
     )]
     pub vault_config: Account<'info, VaultConfig>,
     #[account(
-        init,
-        payer = payer,
+        mut,
         seeds = [SHARE_MINT_SEED, vault_config.key().as_ref()],
-        bump,
-        mint::decimals = SHARE_DECIMALS,
-        mint::authority = vault_authority
+        bump
     )]
-    pub share_mint: Account<'info, Mint>,
+    /// CHECK: created and initialized as a standard SPL mint below using the
+    /// token program selected by the frozen address book.
+    pub share_mint: UncheckedAccount<'info>,
     /// CHECK: this PDA is the share mint authority and is not initialized here.
     #[account(seeds = [VAULT_AUTHORITY_SEED, vault_config.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
-    pub token_program: Program<'info, Token>,
+    /// CHECK: checked against the frozen address book before it is used as a
+    /// CPI program.
+    pub token_program: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
 }
 
 pub fn create_vault(
@@ -52,6 +55,10 @@ pub fn create_vault(
     input_mint: Pubkey,
     components: Vec<ComponentInput>,
 ) -> Result<()> {
+    require!(
+        ctx.accounts.token_program.key() == ctx.accounts.address_book.token_program,
+        ArancioError::InvalidTokenProgram
+    );
     require!(!name.is_empty(), ArancioError::EmptyName);
     require!(
         name.len() <= MAX_VAULT_NAME_BYTES,
@@ -72,6 +79,37 @@ pub fn create_vault(
         .map(|component| component.weight_bps)
         .collect();
     validate_weights(&weights)?;
+
+    let vault_config_key = ctx.accounts.vault_config.key();
+    let share_mint_bump = [ctx.bumps.share_mint];
+    let share_mint_seeds: &[&[u8]] =
+        &[SHARE_MINT_SEED, vault_config_key.as_ref(), &share_mint_bump];
+    let create_mint_accounts = anchor_lang::system_program::CreateAccount {
+        from: ctx.accounts.payer.to_account_info(),
+        to: ctx.accounts.share_mint.to_account_info(),
+    };
+    anchor_lang::system_program::create_account(
+        CpiContext::new(
+            ctx.accounts.system_program.key(),
+            create_mint_accounts,
+        )
+        .with_signer(&[share_mint_seeds]),
+        Rent::get()?.minimum_balance(Mint::LEN),
+        Mint::LEN as u64,
+        &ctx.accounts.token_program.key(),
+    )?;
+
+    token_interface::initialize_mint2(
+        CpiContext::new(
+            ctx.accounts.token_program.key(),
+            InitializeMint2 {
+                mint: ctx.accounts.share_mint.to_account_info(),
+            },
+        ),
+        SHARE_DECIMALS,
+        &ctx.accounts.vault_authority.key(),
+        None,
+    )?;
 
     let vault_config = &mut ctx.accounts.vault_config;
     vault_config.creator = ctx.accounts.payer.key();
