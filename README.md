@@ -24,6 +24,9 @@ terminal:
 
 The tests use `ARANCIO_RPC_URL` when set, otherwise they connect to
 `http://127.0.0.1:8899`.
+The smoke test compares the local RPC genesis hash with a separate mainnet RPC;
+set `ARANCIO_MAINNET_RPC_URL` to override the default
+`https://api.mainnet-beta.solana.com` endpoint.
 
 Run the direct workspace smoke test:
 
