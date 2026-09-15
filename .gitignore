@@ -1,0 +1,8 @@
+.superpowers/
+.surfpool/
+target/
+node_modules/
+*.keypair.json
+.env
+.env.*
+!.env.example
