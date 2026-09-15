@@ -1,4 +1,7 @@
-# arancio
+# arancio / orange
+
+Solana workspace for Stocklana: corporate-action registry + ERC-4626-style vault
+scaffolding. DivStrip (PT/YT) builds on `ca_registry`.
 
 ## Toolchain
 
@@ -7,80 +10,64 @@
 - Surfpool: 1.5.0
 - Node.js with Yarn 1.x
 
-Install JavaScript dependencies with Yarn:
-
 ```bash
 yarn install
 ```
 
 ## Local Test RPC
 
-Start the direct mainnet-backed Surfpool smoke-test endpoint in a separate
-terminal:
-
 ```bash
 ./scripts/start-surfpool.sh
 ```
 
-The launcher uses an isolated in-memory database by default, so configuration
-tests can be rerun without deleting state. Set `ARANCIO_SURFPOOL_DB` to an
-explicit SQLite path when persistence is needed; the datasource remains
-mainnet-backed in either case.
-
-The tests use `ARANCIO_RPC_URL` when set, otherwise they connect to
-`http://127.0.0.1:8899`.
-The smoke test compares the local RPC genesis hash with the fixed official
-mainnet-beta RPC endpoint.
-
-Run the direct workspace smoke test:
+Tests use `ARANCIO_RPC_URL` when set, otherwise `http://127.0.0.1:8899`.
 
 ```bash
+# Workspace smoke + immutable vault config
 yarn mocha tests/arancio.ts --grep "workspace smoke"
-```
 
-Run the immutable-configuration tests against a fresh isolated Surfpool
-instance without deleting any database state:
-
-```bash
 ARANCIO_SURFPOOL_DB=:memory: ./scripts/start-surfpool.sh
 ARANCIO_RPC_URL=http://127.0.0.1:8899 \
   yarn mocha -t 1000000 tests/arancio.ts \
   --grep "configuration|named vault|immutable"
-```
 
-Run Anchor integration tests only through the explicit Surfpool wrapper. This
-prevents the test command from falling back to the legacy
-`solana-test-validator`:
+# CA registry + CRE sync
+ARANCIO_RPC_URL=http://127.0.0.1:8899 \
+  yarn mocha -t 180000 tests/ca-registry.ts
 
-```bash
 yarn test:anchor
 ```
 
-## Live Kamino Discovery
+## Programs
 
-The discovery client uses the Kamino API only for reserve candidates. It reads
-the reserve, mint, oracle, and token-program state from the local mainnet-backed
-Surfpool RPC before returning a supply-enabled reserve. Supply the deployment
-market and address-book accounts explicitly:
+| Program | Role |
+|---------|------|
+| `ca_registry` | On-chain CA history (kind, cum factors, yield nonces) fed by CRE |
+| `divstrip` | Wrap xStock → PT + YT for a yield-nonce window; unwrap / redeem |
+| `arancio` | Named vault + share mint (ERC-4626 custody deposit) |
 
-```bash
-ARANCIO_KAMINO_MARKET="$KAMINO_MARKET" \
-ARANCIO_PROGRAM_ID="$ARANCIO_PROGRAM_ID" \
-ARANCIO_ADDRESS_BOOK="$ARANCIO_ADDRESS_BOOK" \
-ARANCIO_RPC_URL=http://127.0.0.1:8899 \
-  yarn mocha tests/discovery.ts
-```
+## DivStrip web desk
 
-`ARANCIO_KAMINO_API_URL` may override the Kamino API host when required. The
-client does not identify assets by symbols or embed token, protocol, or market
-IDs.
-
-Build the empty bootstrap program:
+Stocklana-styled landing + strip UI (Phantom / Solflare / Torus):
 
 ```bash
+# Terminal A — Surfpool
+./scripts/start-surfpool.sh
+
+# Terminal B — deploy programs
 anchor build
+anchor deploy -p ca_registry --provider.cluster localnet
+anchor deploy -p divstrip --provider.cluster localnet
+
+# Terminal C — site
+yarn web
+# or: cd web && npm install && npm run dev
+# → http://127.0.0.1:5173
 ```
 
-Anchor's Surfpool test configuration uses Surfpool's mainnet-backed datasource
-while keeping the RPC local. The direct smoke-test launcher remains available
-for validating the standalone Surfpool RPC.
+Point the wallet RPC at `http://127.0.0.1:8899` (Phantom: developer settings /
+custom RPC). Landing explains the split; `/app` lists xStock / PT / YT and runs
+`wrap` when registry + strip market exist.
+
+Kamino lending is **not** integrated. Jupiter program id remains in the arancio
+address book for a later swap path.

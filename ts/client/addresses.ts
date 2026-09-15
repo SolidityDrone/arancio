@@ -2,7 +2,6 @@ import { createHash } from "crypto";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export type AddressBook = {
-  kaminoProgram: PublicKey;
   jupiterProgram: PublicKey;
   tokenProgram: PublicKey;
   token2022Program: PublicKey;
@@ -13,7 +12,7 @@ export type AddressBook = {
 const ACCOUNT_DISCRIMINATOR_BYTES = 8;
 const PUBLIC_KEY_BYTES = 32;
 const ADDRESS_BOOK_BYTES =
-  ACCOUNT_DISCRIMINATOR_BYTES + PUBLIC_KEY_BYTES * 6 + 1;
+  ACCOUNT_DISCRIMINATOR_BYTES + PUBLIC_KEY_BYTES * 5 + 1;
 const ADDRESS_BOOK_DISCRIMINATOR = createHash("sha256")
   .update("account:AddressBook")
   .digest()
@@ -52,7 +51,6 @@ export async function loadAddressBook(
   };
 
   const result = {
-    kaminoProgram: readPublicKey(),
     jupiterProgram: readPublicKey(),
     tokenProgram: readPublicKey(),
     token2022Program: readPublicKey(),

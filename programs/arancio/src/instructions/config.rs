@@ -116,7 +116,6 @@ pub fn freeze_address_book(ctx: Context<FreezeAddressBook>) -> Result<()> {
 }
 
 fn set_program_ids(address_book: &mut AddressBook, program_ids: AddressBookInput) {
-    address_book.kamino_program = program_ids.kamino_program;
     address_book.jupiter_program = program_ids.jupiter_program;
     address_book.token_program = program_ids.token_program;
     address_book.token_2022_program = program_ids.token_2022_program;

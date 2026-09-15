@@ -11,7 +11,6 @@ pub const SHARE_DECIMALS: u8 = 9;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct AddressBookInput {
-    pub kamino_program: Pubkey,
     pub jupiter_program: Pubkey,
     pub token_program: Pubkey,
     pub token_2022_program: Pubkey,
@@ -21,23 +20,17 @@ pub struct AddressBookInput {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ComponentInput {
     pub mint: Pubkey,
-    pub reserve: Pubkey,
-    pub collateral_mint: Pubkey,
-    pub oracle: Pubkey,
     pub weight_bps: u16,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ComponentConfig {
     pub mint: Pubkey,
-    pub reserve: Pubkey,
-    pub collateral_mint: Pubkey,
-    pub oracle: Pubkey,
     pub weight_bps: u16,
 }
 
 impl ComponentConfig {
-    pub const SPACE: usize = 32 * 4 + 2;
+    pub const SPACE: usize = 32 + 2;
 }
 
 #[account]
@@ -55,7 +48,6 @@ impl GlobalConfig {
 #[account]
 pub struct AddressBook {
     pub authority: Pubkey,
-    pub kamino_program: Pubkey,
     pub jupiter_program: Pubkey,
     pub token_program: Pubkey,
     pub token_2022_program: Pubkey,
@@ -64,7 +56,7 @@ pub struct AddressBook {
 }
 
 impl AddressBook {
-    pub const SPACE: usize = 8 + 32 + 32 * 5 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 * 4 + 1;
 }
 
 #[account]

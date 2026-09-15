@@ -6,3 +6,9 @@ node_modules/
 .env
 .env.*
 !.env.example
+secrets.yaml
+test-ledger/
+.yarn/
+web/dist/
+*.tsbuildinfo
+package-lock.json

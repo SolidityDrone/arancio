@@ -1,5 +1,9 @@
 # Arancio: Fork-First Basket Vault Design
 
+> **Superseded for Stocklana:** Kamino lending was removed. Arancio is now an
+> ERC-4626-style custody vault (share mint + deposit). See root `README.md` and
+> `docs/superpowers/specs/2026-09-16-ca-registry-divstrip-design.md`.
+
 Date: 2026-09-15
 Status: Draft for written-spec review
 

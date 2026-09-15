@@ -12,6 +12,8 @@ pub(crate) use instructions::config::{
     __client_accounts_freeze_address_book, __client_accounts_initialize_address_book,
     __client_accounts_initialize_global_config, __client_accounts_update_address_book,
 };
+pub use instructions::deposit::Deposit;
+pub(crate) use instructions::deposit::__client_accounts_deposit;
 pub use instructions::vault::CreateVault;
 pub(crate) use instructions::vault::__client_accounts_create_vault;
 
@@ -54,5 +56,10 @@ pub mod arancio {
         components: Vec<state::ComponentInput>,
     ) -> Result<()> {
         instructions::vault::create_vault(ctx, name, input_mint, components)
+    }
+
+    /// ERC-4626-style deposit of the vault `input_mint`; mints proportional shares.
+    pub fn deposit(ctx: Context<Deposit>, assets: u64, min_shares: u64) -> Result<()> {
+        instructions::deposit::deposit(ctx, assets, min_shares)
     }
 }

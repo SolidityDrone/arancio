@@ -1,0 +1,18 @@
+# ==========================================================================
+# CRE PROJECT SETTINGS FILE
+# ==========================================================================
+
+staging-settings:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
+    # Surfpool / local fork (mainnet selector + local RPC)
+    - chain-name: solana-mainnet
+      url: http://127.0.0.1:8899
+
+production-settings:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
+    - chain-name: solana-mainnet
+      url: https://api.mainnet-beta.solana.com

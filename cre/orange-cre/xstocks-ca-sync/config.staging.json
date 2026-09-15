@@ -1,0 +1,14 @@
+{
+  "schedule": "0 0 */6 * * *",
+  "symbol": "KOx",
+  "network": "Solana",
+  "mint": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+  "writeOnchain": true,
+  "chainSelector": "124615329519749607",
+  "receiverProgramId": "2WSNFu4xuaH55gpMRBN1p64YuiUXZzyze38ERXEy1U1z",
+  "forwarderProgramId": "7kuEAA3mSC1Tz8gQjnvH7bKFda9xSPRRin9SZbH49cNK",
+  "forwarderState": "jhCjuD4Z3V7HeSUChMRpkRwpw6B9yC63mxDMv8SdLNX",
+  "computeLimit": 290000,
+  "maxEventsPerWrite": 1,
+  "backfillMode": "oldest"
+}

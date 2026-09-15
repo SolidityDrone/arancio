@@ -1,5 +1,8 @@
 # Arancio Implementation Plan
 
+> **Superseded for Stocklana:** Kamino integration tasks below are obsolete.
+> Vault is custody-only ERC-4626; CA registry / DivStrip is the active path.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a fork-first Solana Anchor workspace that creates immutable named custom basket vaults and executes real Jupiter and Kamino deposit/redemption flows against Surfpool mainnet state.

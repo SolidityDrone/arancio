@@ -26,4 +26,12 @@ pub enum ArancioError {
     InvalidAddressBook,
     #[msg("token program does not match the frozen address book")]
     InvalidTokenProgram,
+    #[msg("share mint does not match the vault config")]
+    InvalidShareMint,
+    #[msg("deposit amount must be greater than zero")]
+    ZeroDepositAmount,
+    #[msg("minted shares are below the requested minimum")]
+    MinSharesNotMet,
+    #[msg("component mint does not match the supplied accounts")]
+    InvalidComponentMint,
 }

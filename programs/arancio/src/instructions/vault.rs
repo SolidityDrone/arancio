@@ -119,9 +119,6 @@ pub fn create_vault(
         .into_iter()
         .map(|component| ComponentConfig {
             mint: component.mint,
-            reserve: component.reserve,
-            collateral_mint: component.collateral_mint,
-            oracle: component.oracle,
             weight_bps: component.weight_bps,
         })
         .collect();
