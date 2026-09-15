@@ -3,6 +3,7 @@
   "scripts": {
     "mocha": "ts-mocha -p ./tsconfig.json",
     "test": "ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\"",
+    "test:anchor": "./scripts/test-anchor.sh",
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
   },

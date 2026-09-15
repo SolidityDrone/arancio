@@ -15,7 +15,8 @@ yarn install
 
 ## Local Test RPC
 
-Start the mainnet-backed local Surfpool endpoint in a separate terminal:
+Start the direct mainnet-backed Surfpool smoke-test endpoint in a separate
+terminal:
 
 ```bash
 ./scripts/start-surfpool.sh
@@ -24,12 +25,26 @@ Start the mainnet-backed local Surfpool endpoint in a separate terminal:
 The tests use `ARANCIO_RPC_URL` when set, otherwise they connect to
 `http://127.0.0.1:8899`.
 
-Run the workspace smoke test and build:
+Run the direct workspace smoke test:
 
 ```bash
 yarn mocha tests/arancio.ts --grep "workspace smoke"
+```
+
+Run Anchor integration tests only through the explicit Surfpool wrapper. This
+prevents the test command from falling back to the legacy
+`solana-test-validator`:
+
+```bash
+yarn test:anchor
+```
+
+Build the empty bootstrap program:
+
+```bash
 anchor build
 ```
 
-All workspace commands use the local provider and do not require a public
-cluster.
+Anchor's Surfpool test configuration is offline and does not require a public
+cluster. The direct smoke-test launcher remains available for validating the
+standalone Surfpool RPC.
