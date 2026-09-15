@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export type AddressBook = {
@@ -13,6 +14,10 @@ const ACCOUNT_DISCRIMINATOR_BYTES = 8;
 const PUBLIC_KEY_BYTES = 32;
 const ADDRESS_BOOK_BYTES =
   ACCOUNT_DISCRIMINATOR_BYTES + PUBLIC_KEY_BYTES * 6 + 1;
+const ADDRESS_BOOK_DISCRIMINATOR = createHash("sha256")
+  .update("account:AddressBook")
+  .digest()
+  .subarray(0, ACCOUNT_DISCRIMINATOR_BYTES);
 
 export async function loadAddressBook(
   connection: Connection,
@@ -30,6 +35,13 @@ export async function loadAddressBook(
   }
   if (account.data.length < ADDRESS_BOOK_BYTES) {
     throw new Error("address book account has an invalid size");
+  }
+  if (
+    !account.data
+      .subarray(0, ACCOUNT_DISCRIMINATOR_BYTES)
+      .equals(ADDRESS_BOOK_DISCRIMINATOR)
+  ) {
+    throw new Error("address book has an invalid Anchor discriminator");
   }
 
   let offset = ACCOUNT_DISCRIMINATOR_BYTES + PUBLIC_KEY_BYTES;

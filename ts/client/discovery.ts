@@ -8,7 +8,16 @@ export type ReserveDescriptor = {
   liquidityMint: PublicKey;
   collateralMint: PublicKey;
   oracle: PublicKey;
+  tokenProgram: PublicKey;
   supplyEnabled: boolean;
+};
+
+export type ReserveComponentIdentity = {
+  market: PublicKey;
+  liquidityMint: PublicKey;
+  collateralMint: PublicKey;
+  oracle: PublicKey;
+  tokenProgram: PublicKey;
 };
 
 type U64Parts = { high: number; low: number };
@@ -18,6 +27,7 @@ const ACCOUNT_DISCRIMINATOR_BYTES = 8;
 const PUBLIC_KEY_BYTES = 32;
 const U64_BYTES = 8;
 const U128_BYTES = 16;
+const FRACTION_SCALE = 1n << 60n;
 const RESERVE_DISCRIMINATOR = createHash("sha256")
   .update("account:Reserve")
   .digest()
@@ -67,8 +77,22 @@ const compareU64 = (left: U64Parts, right: U64Parts) =>
 const readPublicKey = (data: Buffer, offset: number) =>
   new PublicKey(data.subarray(offset, offset + PUBLIC_KEY_BYTES));
 
+const readU128 = (data: Buffer, offset: number): bigint => {
+  let value = 0n;
+  for (let index = U128_BYTES - 1; index >= 0; index -= 1) {
+    value = (value << 8n) | BigInt(data[offset + index]);
+  }
+  return value;
+};
+
 const isDefaultPublicKey = (value: PublicKey) =>
   value.equals(PublicKey.default);
+
+// Kamino uses an all-ones pubkey for an unset optional oracle.
+const KAMINO_NULL_ORACLE = new PublicKey(new Uint8Array(32).fill(0xff));
+
+const isUnsetOracle = (value: PublicKey) =>
+  isDefaultPublicKey(value) || value.equals(KAMINO_NULL_ORACLE);
 
 const getJson = (url: string): Promise<unknown> =>
   new Promise((resolve, reject) => {
@@ -149,9 +173,15 @@ const decodeReserve = (
   const tokenProgram = readPublicKey(data, reserveLiquidityOffset + 280);
   const collateralMint = readPublicKey(data, reserveCollateralOffset);
   const status = data[reserveConfigOffset];
-  const depositLimit = readU64(data, reserveConfigOffset + 160);
+  const depositLimit = BigInt(readU64(data, reserveConfigOffset + 160).low);
   const depositLimitCrossed = readU64(data, reserveLiquidityOffset + 152);
-  const availableAmount = readU64(data, reserveLiquidityOffset + 96);
+  const availableAmount = BigInt(readU64(data, reserveLiquidityOffset + 96).low);
+  const totalSupply =
+    availableAmount * FRACTION_SCALE +
+    readU128(data, reserveLiquidityOffset + 104) -
+    readU128(data, reserveLiquidityOffset + 216) -
+    readU128(data, reserveLiquidityOffset + 232) -
+    readU128(data, reserveLiquidityOffset + 248);
 
   const oracleCandidates = [
     readPublicKey(
@@ -168,7 +198,7 @@ const decodeReserve = (
     ),
   ];
   const oracle = oracleCandidates.find(
-    (candidate) => !isDefaultPublicKey(candidate)
+    (candidate) => !isUnsetOracle(candidate)
   );
   if (
     !oracle ||
@@ -180,9 +210,8 @@ const decodeReserve = (
 
   const supplyEnabled =
     status === 0 &&
-    !isZero(depositLimit) &&
+    totalSupply < depositLimit * FRACTION_SCALE &&
     isZero(depositLimitCrossed) &&
-    compareU64(availableAmount, depositLimit) < 0 &&
     !isDefaultPublicKey(tokenProgram) &&
     !programOwner.equals(PublicKey.default);
 
@@ -192,6 +221,7 @@ const decodeReserve = (
     liquidityMint,
     collateralMint,
     oracle,
+    tokenProgram,
     supplyEnabled,
   };
 };
@@ -248,18 +278,31 @@ export async function discoverSupplyReserves(
 
 export function assertReserveMatchesComponent(
   reserve: ReserveDescriptor,
-  mint: PublicKey
+  expected: ReserveComponentIdentity
 ): void {
-  if (!reserve.market || isDefaultPublicKey(reserve.market)) {
-    throw new Error("reserve has an invalid market");
+  if (!reserve.market.equals(expected.market)) {
+    throw new Error("reserve market does not match component");
   }
-  if (isDefaultPublicKey(reserve.collateralMint)) {
-    throw new Error("reserve has an invalid collateral mint");
+  if (!reserve.liquidityMint.equals(expected.liquidityMint)) {
+    throw new Error("reserve liquidity mint does not match component");
+  }
+  if (!reserve.collateralMint.equals(expected.collateralMint)) {
+    throw new Error("reserve collateral mint does not match component");
+  }
+  if (!reserve.oracle.equals(expected.oracle)) {
+    throw new Error("reserve oracle does not match component");
+  }
+  if (!reserve.tokenProgram.equals(expected.tokenProgram)) {
+    throw new Error("reserve token program does not match component");
   }
   if (!reserve.supplyEnabled) {
     throw new Error("reserve does not allow supply");
   }
-  if (!reserve.liquidityMint.equals(mint)) {
-    throw new Error("reserve liquidity mint does not match component mint");
-  }
 }
+
+export const decodeReserveAccount = (
+  data: Buffer,
+  market: PublicKey,
+  reserve: PublicKey,
+  programOwner: PublicKey
+): ReserveDescriptor | null => decodeReserve(data, market, reserve, programOwner);
