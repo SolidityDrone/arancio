@@ -28,6 +28,104 @@ export type CorporateAction = {
   status?: string;
 };
 
+export function caEffectiveDay(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/** Stable key for list rows + nonce lookup. */
+export function caRowKey(action: CorporateAction): string {
+  if (action.eventId) return action.eventId;
+  return `${action.caType}:${caEffectiveDay(action.effectiveTimeUtc)}`;
+}
+
+function hasMultipliers(action: CorporateAction): boolean {
+  return Boolean(action.multiplierOld && action.multiplierNew);
+}
+
+/** Same economic CA across history/upcoming (shared id or ~same ex-date). */
+export function isSameCorporateAction(
+  a: CorporateAction,
+  b: CorporateAction
+): boolean {
+  if (a.eventId && b.eventId && a.eventId === b.eventId) return true;
+  if (a.caType !== b.caType) return false;
+  const ta = new Date(a.effectiveTimeUtc).getTime();
+  const tb = new Date(b.effectiveTimeUtc).getTime();
+  if (Number.isNaN(ta) || Number.isNaN(tb)) {
+    return caEffectiveDay(a.effectiveTimeUtc) === caEffectiveDay(b.effectiveTimeUtc);
+  }
+  if (caEffectiveDay(a.effectiveTimeUtc) === caEffectiveDay(b.effectiveTimeUtc)) {
+    return true;
+  }
+  // History vs upcoming often differ by a few hours around midnight UTC.
+  return Math.abs(ta - tb) <= 36 * 60 * 60 * 1000;
+}
+
+function preferCaRecord(
+  left: CorporateAction,
+  right: CorporateAction
+): CorporateAction {
+  const leftMult = hasMultipliers(left);
+  const rightMult = hasMultipliers(right);
+  if (leftMult && !rightMult) return left;
+  if (rightMult && !leftMult) return right;
+  return left;
+}
+
+function dedupeCaList(actions: CorporateAction[]): CorporateAction[] {
+  const out: CorporateAction[] = [];
+  for (const action of actions) {
+    const idx = out.findIndex((existing) => isSameCorporateAction(existing, action));
+    if (idx < 0) {
+      out.push(action);
+      continue;
+    }
+    out[idx] = preferCaRecord(out[idx], action);
+  }
+  return out;
+}
+
+/** xStocks often returns the same CA in both history and upcoming — keep one row. */
+export function mergeCorporateActions(
+  history: CorporateAction[],
+  upcoming: CorporateAction[]
+): CorporateAction[] {
+  return dedupeCaList([...history, ...upcoming]);
+}
+
+export type CaListRow = CorporateAction & { upcoming: boolean };
+
+/** Sidebar list: upcoming-only first, then history — no duplicates. */
+export function buildCaListRows(
+  history: CorporateAction[],
+  upcoming: CorporateAction[]
+): CaListRow[] {
+  const historyDeduped = dedupeCaList(history);
+  const upcomingOnly = dedupeCaList(upcoming)
+    .filter(
+      (row) => !historyDeduped.some((h) => isSameCorporateAction(h, row))
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.effectiveTimeUtc).getTime() -
+        new Date(b.effectiveTimeUtc).getTime()
+    )
+    .map((row) => ({ ...row, upcoming: true as const }));
+
+  const historyRows = historyDeduped
+    .sort(
+      (a, b) =>
+        new Date(b.effectiveTimeUtc).getTime() -
+        new Date(a.effectiveTimeUtc).getTime()
+    )
+    .map((row) => ({ ...row, upcoming: false as const }));
+
+  return [...upcomingOnly, ...historyRows];
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, {
     headers: { Accept: "application/json" },
@@ -170,6 +268,24 @@ export async function fetchMarketIntel(symbol: string): Promise<MarketIntel> {
     upcoming,
     yieldEvents,
   };
+}
+
+/** Compact spot price for market list rows. */
+export function formatStockPrice(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (n >= 10_000) return `$${(n / 1000).toFixed(1)}k`;
+  if (n >= 1000) return `$${n.toFixed(0)}`;
+  if (n >= 100) return `$${n.toFixed(1)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+export async function fetchPricesUsd(
+  symbols: string[]
+): Promise<Record<string, number | null>> {
+  const entries = await Promise.all(
+    symbols.map(async (symbol) => [symbol, await fetchPriceUsd(symbol)] as const)
+  );
+  return Object.fromEntries(entries);
 }
 
 export function formatUsd(n: number | null | undefined, digits = 2): string {

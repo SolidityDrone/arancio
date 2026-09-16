@@ -46,6 +46,9 @@ type Props = {
   onManualTargetChange: (target: number) => void;
   fairCouponForWindow: (start: number, target: number) => number;
   rpcEndpoint: string;
+  onDeskActivity?: () => void;
+  onRedeemPt?: (start: number, target: number, amountRaw: bigint) => void;
+  onRedeemYt?: (start: number, target: number, amountRaw: bigint) => void;
   /** Render only the inspect column or market band (used by unified desk layout). */
   part?: "all" | "core" | "market";
 };
@@ -83,6 +86,9 @@ export function StripInspectPanel({
   onManualTargetChange,
   fairCouponForWindow,
   rpcEndpoint,
+  onDeskActivity,
+  onRedeemPt,
+  onRedeemYt,
   part = "all",
 }: Props) {
   const [cumStart, setCumStart] = useState<bigint>(MULTIPLIER_SCALE);
@@ -318,6 +324,54 @@ export function StripInspectPanel({
               ) : null}
             </dl>
           )}
+
+          {activeRow?.seriesExists && phase === "mature" ? (
+            <div className="inspect-actions">
+              <p className="inspect-actions-label">Redeem legs</p>
+              <div className="inspect-redeem-row">
+                {activeRow.ptRaw > 0n ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm inspect-action-btn"
+                    disabled={busy || !onRedeemPt}
+                    onClick={() =>
+                      onRedeemPt?.(
+                        inspectStart,
+                        inspectTarget,
+                        activeRow.ptRaw
+                      )
+                    }
+                  >
+                    Redeem PT →{" "}
+                    {formatRawAmount(ptRedeemRaw, underlyingDecimals)} {symbol}
+                  </button>
+                ) : null}
+                {activeRow.ytRaw > 0n ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm inspect-action-btn"
+                    disabled={busy || !onRedeemYt}
+                    onClick={() =>
+                      onRedeemYt?.(
+                        inspectStart,
+                        inspectTarget,
+                        activeRow.ytRaw
+                      )
+                    }
+                  >
+                    Redeem YT →{" "}
+                    {formatRawAmount(ytRedeemRaw, underlyingDecimals)} {symbol}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : activeRow?.seriesExists &&
+            (activeRow.ptRaw > 0n || activeRow.ytRaw > 0n) ? (
+            <p className="hint inspect-redeem-hint">
+              Unwrap early in the split panel (equal PT + YT). Redeem unlocks at
+              maturity.
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
@@ -344,9 +398,13 @@ export function StripInspectPanel({
                 connection={connection}
                 rpcEndpoint={rpcEndpoint}
                 pool={verifiedLaunch.pool}
+                symbol={symbol}
+                startNonce={inspectStart}
+                targetNonce={inspectTarget}
                 baseMint={verifiedLaunch.baseMint}
                 quoteMint={verifiedLaunch.quoteMint}
                 ytSymbol={`YT${symbol}`}
+                onActivityLogged={onDeskActivity}
               />
             ) : (
               <div className="inspect-meteora-empty">

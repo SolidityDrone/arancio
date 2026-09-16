@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import {
   Connection,
@@ -48,13 +49,31 @@ import {
 } from "../lib/desk-activity";
 import { positionsForSymbol, saveStripPosition } from "../lib/strip-positions";
 import { sendTransactionChecked } from "../lib/wallet-tx";
-import { formatSimHint, localWalletHint } from "../lib/tx-preview";
+import { isTxDenied } from "../lib/tx-error";
+import { formatSimHint } from "../lib/tx-preview";
 import {
+  formatRawAmount,
+  uiAmountToRaw,
+  redeemOutputRaw,
+  windowPhase,
+} from "../lib/strip-math";
+import { fetchWindowCumYs } from "../lib/registry-cum-y";
+import {
+  buildRedeemCapitalTransaction,
+  buildRedeemYieldTransaction,
+  buildUnwrapTransaction,
+} from "../lib/strip-tx";
+import { assignRegistryYieldNonces } from "../lib/registry-nonces";
+import {
+  buildCaListRows,
+  caRowKey,
   fetchMarketIntel,
+  fetchPricesUsd,
+  formatStockPrice,
   formatUsd,
-  formatQty,
+  mergeCorporateActions,
   trailingDivYield,
-  type CorporateAction,
+  type CaListRow,
   type MarketIntel,
 } from "../lib/xstocks-api";
 import idl from "../lib/divstrip.json";
@@ -129,6 +148,9 @@ function readEventCount(data: Buffer): number {
 }
 
 function explainTxError(err: unknown): string {
+  if (isTxDenied(err)) {
+    return "Transaction denied — nothing was sent on-chain";
+  }
   const msg = err instanceof Error ? err.message : String(err);
   if (
     msg.includes("Failed to fetch accounts from remote") ||
@@ -154,13 +176,6 @@ function explainTxError(err: unknown): string {
     );
   }
   return msg;
-}
-
-function uiAmountToRaw(amount: number, decimals: number): bigint {
-  const safe = amount.toFixed(Math.min(decimals, 12));
-  const [whole, frac = ""] = safe.split(".");
-  const padded = (frac + "0".repeat(decimals)).slice(0, decimals);
-  return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(padded || "0");
 }
 
 function fairCouponFromYieldEvents(
@@ -217,8 +232,6 @@ function formatMultiplierPair(
   return `${Number(old).toFixed(4)} → ${Number(next).toFixed(4)}`;
 }
 
-type CaRow = CorporateAction & { upcoming: boolean };
-
 function windowKey(start: number, target: number): string {
   return `${start}:${target}`;
 }
@@ -248,10 +261,12 @@ async function fetchSplBalance(
 export function AppPage() {
   const { connection } = useConnection();
   const wallet = useWallet();
+  const [searchParams] = useSearchParams();
   const [symbol, setSymbol] = useState("KOx");
   const [search, setSearch] = useState("");
   const [sector, setSector] = useState<MarketSector | "All">("All");
   const [amount, setAmount] = useState("1");
+  const [unwrapAmount, setUnwrapAmount] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [tipNonce, setTipNonce] = useState(0);
@@ -268,6 +283,9 @@ export function AppPage() {
   } | null>(null);
   const [intel, setIntel] = useState<MarketIntel | null>(null);
   const [intelLoading, setIntelLoading] = useState(false);
+  const [marketPrices, setMarketPrices] = useState<
+    Record<string, number | null>
+  >({});
   const [walletBalance, setWalletBalance] = useState<{
     uiAmountString: string;
     rawAmount: bigint;
@@ -305,6 +323,87 @@ export function AppPage() {
   const lockNonces = Math.max(1, windowTarget - windowStart);
   const isForwardWindow = windowStart > tipNonce;
   const startMax = tipNonce + MAX_FORWARD;
+  const underlyingDecimals = walletBalance?.decimals ?? 8;
+
+  const splitWindowRow = useMemo(
+    () =>
+      legHoldings.find(
+        (r) =>
+          r.startNonce === windowStart && r.targetNonce === windowTarget
+      ) ?? null,
+    [legHoldings, windowStart, windowTarget]
+  );
+
+  const splitPhase = windowPhase(tipNonce, windowStart, windowTarget);
+
+  const [splitCums, setSplitCums] = useState({
+    cumStart: MULTIPLIER_SCALE,
+    cumTarget: MULTIPLIER_SCALE,
+  });
+
+  useEffect(() => {
+    setUnwrapAmount("");
+  }, [windowStart, windowTarget, market.symbol]);
+
+  useEffect(() => {
+    if (!splitWindowRow?.seriesExists || splitPhase !== "mature") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const underlying = new PublicKey(market.mint);
+        const programId = new PublicKey(DIVSTRIP_PROGRAM_ID);
+        const marketKey = marketPda(underlying);
+        const startBuf = Buffer.alloc(4);
+        startBuf.writeUInt32LE(windowStart);
+        const targetBuf = Buffer.alloc(4);
+        targetBuf.writeUInt32LE(windowTarget);
+        const series = PublicKey.findProgramAddressSync(
+          [Buffer.from("series"), marketKey.toBuffer(), startBuf, targetBuf],
+          programId
+        )[0];
+        const seriesInfo = await connection.getAccountInfo(series);
+        const cums = await fetchWindowCumYs(
+          connection,
+          underlying,
+          windowStart,
+          windowTarget,
+          seriesInfo?.data ?? null
+        );
+        if (!cancelled) setSplitCums(cums);
+      } catch {
+        if (!cancelled) {
+          setSplitCums({
+            cumStart: MULTIPLIER_SCALE,
+            cumTarget: MULTIPLIER_SCALE,
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    connection,
+    market.mint,
+    splitPhase,
+    splitWindowRow?.seriesExists,
+    windowStart,
+    windowTarget,
+  ]);
+
+  const splitPtRedeemRaw = redeemOutputRaw(
+    splitWindowRow?.ptRaw ?? 0n,
+    splitCums.cumStart,
+    splitCums.cumTarget,
+    true
+  );
+  const splitYtRedeemRaw = redeemOutputRaw(
+    splitWindowRow?.ytRaw ?? 0n,
+    splitCums.cumStart,
+    splitCums.cumTarget,
+    false
+  );
+  const splitMatureExitRaw = splitPtRedeemRaw + splitYtRedeemRaw;
 
   const fairCoupon = useMemo(() => {
     const fromIntel = intel
@@ -357,23 +456,16 @@ export function AppPage() {
     });
   }, [market.symbol, activityVersion, launches]);
 
-  const caRows = useMemo((): CaRow[] => {
+  const caNonceByEventId = useMemo(() => {
+    if (!intel) return new Map<string, { yieldNonce: number; advancesTip: boolean }>();
+    return assignRegistryYieldNonces(
+      mergeCorporateActions(intel.history, intel.upcoming)
+    );
+  }, [intel]);
+
+  const caRows = useMemo((): CaListRow[] => {
     if (!intel) return [];
-    const history = [...intel.history]
-      .sort(
-        (a, b) =>
-          new Date(b.effectiveTimeUtc).getTime() -
-          new Date(a.effectiveTimeUtc).getTime()
-      )
-      .map((row) => ({ ...row, upcoming: false }));
-    const upcoming = [...intel.upcoming]
-      .sort(
-        (a, b) =>
-          new Date(a.effectiveTimeUtc).getTime() -
-          new Date(b.effectiveTimeUtc).getTime()
-      )
-      .map((row) => ({ ...row, upcoming: true }));
-    return [...upcoming, ...history];
+    return buildCaListRows(intel.history, intel.upcoming);
   }, [intel]);
 
   const tradingLabel = useMemo(() => {
@@ -384,19 +476,6 @@ export function AppPage() {
     if (asset.trading?.openNow === false) return "Closed";
     return null;
   }, [intel?.asset]);
-
-  const lastDividend = useMemo(() => {
-    if (!intel?.history?.length) return null;
-    return (
-      [...intel.history]
-        .filter((e) => e.caType === "CashDividend" && e.grossCashflowUsd)
-        .sort(
-          (a, b) =>
-            new Date(b.effectiveTimeUtc).getTime() -
-            new Date(a.effectiveTimeUtc).getTime()
-        )[0] ?? null
-    );
-  }, [intel?.history]);
 
   const trailYield = useMemo(
     () => trailingDivYield(intel?.history ?? [], intel?.priceUsd ?? null),
@@ -512,8 +591,8 @@ export function AppPage() {
             startNonce: start,
             targetNonce: target,
             seriesExists: true,
-            ptAmount: pt.ui,
-            ytAmount: yt.ui,
+            ptAmount: formatRawAmount(pt.raw, underlyingDecimals),
+            ytAmount: formatRawAmount(yt.raw, underlyingDecimals),
             ptRaw: pt.raw,
             ytRaw: yt.raw,
           };
@@ -533,6 +612,7 @@ export function AppPage() {
     market.symbol,
     positionsVersion,
     wallet.publicKey,
+    underlyingDecimals,
     windowStart,
     windowTarget,
   ]);
@@ -587,10 +667,48 @@ export function AppPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const prices = await fetchPricesUsd(MARKETS.map((m) => m.symbol));
+      if (!cancelled) setMarketPrices(prices);
+    };
+    void load();
+    const t = window.setInterval(load, 120_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const sym = searchParams.get("symbol");
+    const start = searchParams.get("start");
+    const target = searchParams.get("target");
+    if (sym && MARKETS.some((m) => m.symbol === sym)) {
+      setSymbol(sym);
+    }
+    if (start != null && target != null) {
+      const s = parseInt(start, 10);
+      const t = parseInt(target, 10);
+      if (Number.isFinite(s) && Number.isFinite(t) && t > s) {
+        setWindowStart(s);
+        setWindowTarget(t);
+      }
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const sym = searchParams.get("symbol");
+    const hasWindowInUrl =
+      searchParams.get("start") != null && searchParams.get("target") != null;
+    if (sym === symbol && hasWindowInUrl) {
+      setIntel(null);
+      return;
+    }
     setWindowStart(0);
     setWindowTarget(2);
     setIntel(null);
-  }, [symbol]);
+  }, [symbol, searchParams]);
 
   useEffect(() => {
     void refreshRegistry();
@@ -677,36 +795,6 @@ export function AppPage() {
     setInspectSource("portfolio");
   }, []);
 
-  const seedRegistry = useCallback(async () => {
-    if (!wallet.publicKey || !wallet.signTransaction) {
-      setStatus("Connect a wallet to seed the ca_registry on-chain.");
-      return;
-    }
-    setBusy(true);
-    setStatus("Preparing registry seed…");
-    try {
-      const result = await ensureRegistrySeeded({
-        connection,
-        wallet: wallet as unknown as Wallet,
-        symbol: market.symbol,
-        mint: market.mint,
-        onProgress: setStatus,
-      });
-      setRegistryReady(true);
-      applyTip(result.yieldNonce);
-      setOnchainEvents(result.eventCount);
-      await refreshRegistry();
-      setStatus(
-        `Registry ready · tip nonce ${result.yieldNonce} · ${result.eventCount} events synced`
-      );
-    } catch (err: unknown) {
-      console.error(err);
-      setStatus(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [connection, market.mint, market.symbol, refreshRegistry, wallet, applyTip]);
-
   const split = useCallback(async () => {
     if (!wallet.publicKey || !wallet.sendTransaction) {
       setStatus("Connect Phantom or Solflare to split on-chain.");
@@ -771,8 +859,9 @@ export function AppPage() {
             systemProgram: SystemProgram.programId,
           })
           .transaction();
-        const initSig = await sendTransactionChecked(connection, initTx, wallet);
-        await connection.confirmTransaction(initSig, "confirmed");
+        await sendTransactionChecked(connection, initTx, wallet, {
+          modalLabel: "market init",
+        });
       }
 
       const series = seriesPda(marketKey, start, target);
@@ -784,8 +873,7 @@ export function AppPage() {
       const seriesInfo = await connection.getAccountInfo(series);
       const needsSeries = !seriesInfo;
 
-      const decimals = walletBalance?.decimals ?? 8;
-      const raw = uiAmountToRaw(amountNum, decimals);
+      const raw = uiAmountToRaw(amount.trim(), underlyingDecimals);
       if (raw <= 0n) throw new Error("Amount must be greater than zero.");
 
       const userUnderlying = getAssociatedTokenAddressSync(
@@ -895,6 +983,7 @@ export function AppPage() {
         .preInstructions(wrapPreIxs)
         .transaction();
       const sig = await sendTransactionChecked(connection, wrapTx, wallet, {
+        modalLabel: "split",
         beforeWallet: (sim) =>
           setStatus(
             `${formatSimHint(sim)} · split (${wrapSteps}) — confirm in wallet`
@@ -948,6 +1037,7 @@ export function AppPage() {
     selectInspectWindow,
     wallet,
     walletBalance,
+    underlyingDecimals,
     windowStart,
     windowTarget,
   ]);
@@ -999,16 +1089,13 @@ export function AppPage() {
         launch.transaction,
         wallet,
         {
+          modalLabel: "DBC launch",
           beforeWallet: (sim) =>
             setStatus(
               `${formatSimHint(sim)} · launch Meteora DBC — confirm in wallet`
             ),
         }
       );
-      const confirmation = await connection.confirmTransaction(sig, "confirmed");
-      if (confirmation.value.err) {
-        throw new Error(`Meteora DBC tx failed: ${JSON.stringify(confirmation.value.err)}`);
-      }
 
       const poolInfo = await connection.getAccountInfo(launch.pool);
       if (!poolInfo) {
@@ -1070,10 +1157,254 @@ export function AppPage() {
     windowTarget,
   ]);
 
+  const unwrapPosition = useCallback(
+    async (start: number, target: number, amountRaw: bigint) => {
+      if (!wallet.publicKey || !wallet.sendTransaction) {
+        setStatus("Connect wallet to unwrap PT + YT.");
+        return;
+      }
+      if (amountRaw <= 0n) {
+        setStatus("Need equal PT and YT balances to unwrap.");
+        return;
+      }
+      setBusy(true);
+      setStatus("Building unwrap…");
+      try {
+        const underlying = new PublicKey(market.mint);
+        const tx = await buildUnwrapTransaction(
+          connection,
+          wallet.publicKey,
+          { underlyingMint: underlying, startNonce: start, targetNonce: target },
+          amountRaw
+        );
+        const sig = await sendTransactionChecked(connection, tx, wallet, {
+          modalLabel: "unwrap",
+        });
+        const ui = formatRawAmount(amountRaw, underlyingDecimals);
+        appendDeskActivity({
+          kind: "unwrap",
+          symbol: market.symbol,
+          startNonce: start,
+          targetNonce: target,
+          at: Date.now(),
+          signature: sig,
+          amount: ui,
+          amountSymbol: market.symbol,
+        });
+        setActivityVersion((v) => v + 1);
+        await refreshLegHoldings();
+        await refreshWalletBalance();
+        setStatus(`Unwrapped ${ui} ${market.symbol} · ${sig.slice(0, 8)}…`);
+      } catch (err: unknown) {
+        console.error(err);
+        setStatus(explainTxError(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      connection,
+      market.mint,
+      market.symbol,
+      refreshLegHoldings,
+      refreshWalletBalance,
+      wallet,
+      underlyingDecimals,
+    ]
+  );
+
+  const redeemPt = useCallback(
+    async (
+      start: number,
+      target: number,
+      amountRaw: bigint,
+      opts?: { manageBusy?: boolean }
+    ) => {
+      if (!wallet.publicKey || !wallet.sendTransaction) {
+        setStatus("Connect wallet to redeem PT.");
+        return;
+      }
+      if (amountRaw <= 0n) return;
+      const manageBusy = opts?.manageBusy ?? true;
+      if (manageBusy) setBusy(true);
+      setStatus("Building PT redeem…");
+      try {
+        const underlying = new PublicKey(market.mint);
+        const tx = await buildRedeemCapitalTransaction(
+          connection,
+          wallet.publicKey,
+          { underlyingMint: underlying, startNonce: start, targetNonce: target },
+          amountRaw
+        );
+        const sig = await sendTransactionChecked(connection, tx, wallet, {
+          modalLabel: "redeem PT",
+        });
+        appendDeskActivity({
+          kind: "redeem_pt",
+          symbol: market.symbol,
+          startNonce: start,
+          targetNonce: target,
+          at: Date.now(),
+          signature: sig,
+          amount: formatRawAmount(amountRaw, underlyingDecimals),
+          amountSymbol: "PT",
+        });
+        setActivityVersion((v) => v + 1);
+        await refreshLegHoldings();
+        await refreshWalletBalance();
+        setStatus(`PT redeemed · ${sig.slice(0, 8)}…`);
+      } catch (err: unknown) {
+        console.error(err);
+        setStatus(explainTxError(err));
+        throw err;
+      } finally {
+        if (manageBusy) setBusy(false);
+      }
+    },
+    [
+      connection,
+      market.mint,
+      market.symbol,
+      refreshLegHoldings,
+      refreshWalletBalance,
+      wallet,
+      underlyingDecimals,
+    ]
+  );
+
+  const redeemYt = useCallback(
+    async (
+      start: number,
+      target: number,
+      amountRaw: bigint,
+      opts?: { manageBusy?: boolean }
+    ) => {
+      if (!wallet.publicKey || !wallet.sendTransaction) {
+        setStatus("Connect wallet to redeem YT.");
+        return;
+      }
+      if (amountRaw <= 0n) return;
+      const manageBusy = opts?.manageBusy ?? true;
+      if (manageBusy) setBusy(true);
+      setStatus("Building YT redeem…");
+      try {
+        const underlying = new PublicKey(market.mint);
+        const tx = await buildRedeemYieldTransaction(
+          connection,
+          wallet.publicKey,
+          { underlyingMint: underlying, startNonce: start, targetNonce: target },
+          amountRaw
+        );
+        const sig = await sendTransactionChecked(connection, tx, wallet, {
+          modalLabel: "redeem YT",
+        });
+        appendDeskActivity({
+          kind: "redeem_yt",
+          symbol: market.symbol,
+          startNonce: start,
+          targetNonce: target,
+          at: Date.now(),
+          signature: sig,
+          amount: formatRawAmount(amountRaw, underlyingDecimals),
+          amountSymbol: "YT",
+        });
+        setActivityVersion((v) => v + 1);
+        await refreshLegHoldings();
+        await refreshWalletBalance();
+        setStatus(`YT redeemed · ${sig.slice(0, 8)}…`);
+      } catch (err: unknown) {
+        console.error(err);
+        setStatus(explainTxError(err));
+        throw err;
+      } finally {
+        if (manageBusy) setBusy(false);
+      }
+    },
+    [
+      connection,
+      market.mint,
+      market.symbol,
+      refreshLegHoldings,
+      refreshWalletBalance,
+      wallet,
+      underlyingDecimals,
+    ]
+  );
+
+  const exitMaturePosition = useCallback(async () => {
+    if (!wallet.publicKey || !wallet.sendTransaction) {
+      setStatus("Connect wallet to redeem at maturity.");
+      return;
+    }
+    if (!splitWindowRow?.seriesExists || splitPhase !== "mature") return;
+    const { ptRaw, ytRaw } = splitWindowRow;
+    if (ptRaw <= 0n && ytRaw <= 0n) return;
+
+    setBusy(true);
+    try {
+      if (ptRaw > 0n) {
+        setStatus("Redeeming PT at maturity…");
+        await redeemPt(windowStart, windowTarget, ptRaw, {
+          manageBusy: false,
+        });
+      }
+      if (ytRaw > 0n) {
+        setStatus("Redeeming YT at maturity…");
+        await redeemYt(windowStart, windowTarget, ytRaw, {
+          manageBusy: false,
+        });
+      }
+      setStatus(
+        `Maturity exit complete · ≈ ${formatRawAmount(splitMatureExitRaw, underlyingDecimals)} ${market.symbol}`
+      );
+    } catch (err: unknown) {
+      console.error(err);
+      setStatus(explainTxError(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    underlyingDecimals,
+    market.symbol,
+    redeemPt,
+    redeemYt,
+    splitMatureExitRaw,
+    splitPhase,
+    splitWindowRow,
+    wallet,
+    windowStart,
+    windowTarget,
+  ]);
+
+  const submitSplitUnwrap = useCallback(() => {
+    const raw = uiAmountToRaw(unwrapAmount, underlyingDecimals);
+    if (raw <= 0n) {
+      setStatus("Enter an unwrap amount greater than zero.");
+      return;
+    }
+    const ptRaw = splitWindowRow?.ptRaw ?? 0n;
+    const ytRaw = splitWindowRow?.ytRaw ?? 0n;
+    if (raw > ptRaw || raw > ytRaw) {
+      setStatus(
+        `Unwrap burns equal PT + YT — you hold PT ${splitWindowRow?.ptAmount ?? "0"} and YT ${splitWindowRow?.ytAmount ?? "0"}.`
+      );
+      return;
+    }
+    void unwrapPosition(windowStart, windowTarget, raw);
+  }, [
+    underlyingDecimals,
+    splitWindowRow,
+    unwrapAmount,
+    unwrapPosition,
+    windowStart,
+    windowTarget,
+  ]);
+
   return (
     <>
       <Nav />
       <div className="desk-page">
+        <div className="desk-page-veil" aria-hidden />
         <aside className="market-sidebar desk-sidebar desk-sidebar-left">
           <div className="desk-sidebar-head">
             <h3>Markets</h3>
@@ -1113,11 +1444,10 @@ export function AppPage() {
                   onClick={() => setSymbol(m.symbol)}
                 >
                   <StockLogo symbol={m.symbol} name={m.name} size={28} />
-                  <span className="market-item-text">
-                    <span className="sym">{m.symbol}</span>
-                    <span className="name">{m.name}</span>
+                  <span className="sym">{m.symbol}</span>
+                  <span className="market-item-price mono">
+                    {formatStockPrice(marketPrices[m.symbol])}
                   </span>
-                  <span className="sector-badge">{m.sector}</span>
                 </button>
               ))}
             </div>
@@ -1171,32 +1501,6 @@ export function AppPage() {
                     <dd className="mono">n{tipNonce}</dd>
                   </div>
                 </dl>
-                <div className="desk-token-bar-actions">
-                  <span className="desk-token-meta hint">
-                    Circ {formatQty(intel?.circulatingSupply ?? null)} · Last div{" "}
-                    {lastDividend?.grossCashflowUsd
-                      ? formatUsd(Number(lastDividend.grossCashflowUsd))
-                      : "—"}
-                  </span>
-                  {localWalletHint(connection.rpcEndpoint) ? (
-                    <details className="desk-rpc-tip">
-                      <summary>Wallet tips</summary>
-                      <p className="hint">{localWalletHint(connection.rpcEndpoint)}</p>
-                    </details>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={busy || !wallet.publicKey}
-                    onClick={seedRegistry}
-                  >
-                    {busy
-                      ? "…"
-                      : registryReady
-                        ? `Registry · ${onchainEvents} ev`
-                        : "Seed registry"}
-                  </button>
-                </div>
               </div>
 
               <section
@@ -1339,6 +1643,95 @@ export function AppPage() {
                             {isForwardWindow ? " · forward" : ""}
                           </span>
                         </div>
+
+                        {splitWindowRow?.seriesExists &&
+                        splitPhase !== "mature" &&
+                        (splitWindowRow.ptRaw > 0n ||
+                          splitWindowRow.ytRaw > 0n) ? (
+                          <div className="split-unwrap-block">
+                            <p className="split-section-label">
+                              Unwrap before maturity
+                            </p>
+                            {splitWindowRow.ptRaw > 0n &&
+                            splitWindowRow.ytRaw > 0n ? (
+                              <>
+                                <div className="split-action-row">
+                                  <div className="strip-amount-row">
+                                    <input
+                                      value={unwrapAmount}
+                                      onChange={(e) =>
+                                        setUnwrapAmount(e.target.value)
+                                      }
+                                      inputMode="decimal"
+                                      placeholder="Amount"
+                                      aria-label={`Unwrap amount in ${market.symbol}`}
+                                      disabled={busy}
+                                    />
+                                    <span className="strip-amount-unit">
+                                      {market.symbol}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost split-submit"
+                                    disabled={
+                                      busy ||
+                                      !wallet.publicKey ||
+                                      !unwrapAmount.trim()
+                                    }
+                                    onClick={submitSplitUnwrap}
+                                  >
+                                    {busy
+                                      ? "Working…"
+                                      : `Unwrap n${windowStart}→n${windowTarget}`}
+                                  </button>
+                                </div>
+                                <p className="split-meta hint">
+                                  Burns equal PT + YT · you hold PT{" "}
+                                  {splitWindowRow.ptAmount} · YT{" "}
+                                  {splitWindowRow.ytAmount}
+                                </p>
+                              </>
+                            ) : (
+                              <p className="split-meta hint">
+                                Need both PT and YT to unwrap — trade on the
+                                curve or wait for maturity.
+                              </p>
+                            )}
+                          </div>
+                        ) : null}
+
+                        {splitWindowRow?.seriesExists &&
+                        splitPhase === "mature" &&
+                        (splitWindowRow.ptRaw > 0n ||
+                          splitWindowRow.ytRaw > 0n) ? (
+                          <div className="split-exit-block">
+                            <p className="split-section-label">
+                              Redeem at maturity
+                            </p>
+                            <button
+                              type="button"
+                              className="btn btn-primary split-submit split-exit-btn"
+                              disabled={busy || !wallet.publicKey}
+                              onClick={() => void exitMaturePosition()}
+                            >
+                              {busy
+                                ? "Working…"
+                                : `Redeem all · n${windowStart}→n${windowTarget}`}
+                            </button>
+                            <p className="split-meta hint">
+                              Redeems all PT then all YT in two txs — unequal
+                              legs OK (e.g. 1 PT + 150 YT redeems both fully).
+                              ≈{" "}
+                              {formatRawAmount(
+                                splitMatureExitRaw,
+                                underlyingDecimals
+                              )}{" "}
+                              {market.symbol} total · PT {splitWindowRow.ptAmount}{" "}
+                              · YT {splitWindowRow.ytAmount}
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -1365,6 +1758,9 @@ export function AppPage() {
                     onManualTargetChange={setInspectTarget}
                     fairCouponForWindow={fairCouponForWindow}
                     rpcEndpoint={connection.rpcEndpoint}
+                    onDeskActivity={() => setActivityVersion((v) => v + 1)}
+                    onRedeemPt={redeemPt}
+                    onRedeemYt={redeemYt}
                   />
                 </div>
 
@@ -1390,6 +1786,7 @@ export function AppPage() {
                   onManualTargetChange={setInspectTarget}
                   fairCouponForWindow={fairCouponForWindow}
                   rpcEndpoint={connection.rpcEndpoint}
+                  onDeskActivity={() => setActivityVersion((v) => v + 1)}
                 />
 
                 <footer className="desk-card-foot" aria-live="polite">
@@ -1427,11 +1824,35 @@ export function AppPage() {
             <div className="ca-list">
               {caRows.map((row) => (
                 <article
-                  key={`${row.upcoming ? "u" : "h"}-${row.eventId}`}
+                  key={`${row.upcoming ? "u" : "h"}-${caRowKey(row)}`}
                   className={`ca-item ${row.upcoming ? "upcoming" : ""}`}
                 >
                   <div className="ca-item-top">
-                    <span className="ca-type">{row.caType}</span>
+                    <div className="ca-type-row">
+                      {(() => {
+                        const nonce = caNonceByEventId.get(caRowKey(row));
+                        if (!nonce) return null;
+                        return (
+                          <span
+                            className={
+                              nonce.advancesTip
+                                ? "ca-yield-nonce"
+                                : "ca-tip-nonce"
+                            }
+                            title={
+                              nonce.advancesTip
+                                ? `Yield nonce #${nonce.yieldNonce} — advances registry tip`
+                                : `Recorded at tip n${nonce.yieldNonce} — supply/spin-off does not advance tip`
+                            }
+                          >
+                            {nonce.advancesTip
+                              ? `#${nonce.yieldNonce}`
+                              : `n${nonce.yieldNonce}`}
+                          </span>
+                        );
+                      })()}
+                      <span className="ca-type">{row.caType}</span>
+                    </div>
                     <span className={`ca-badge ${row.upcoming ? "up" : ""}`}>
                       {row.upcoming ? "Upcoming" : row.status ?? "Recorded"}
                     </span>

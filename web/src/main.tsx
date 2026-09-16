@@ -5,6 +5,7 @@ import { Buffer } from "buffer";
 import { WalletProviders } from "./components/WalletProviders";
 import { LandingPage } from "./pages/LandingPage";
 import { AppPage } from "./pages/AppPage";
+import { DashboardPage } from "./pages/DashboardPage";
 import "./styles/global.css";
 
 (window as any).Buffer = Buffer;
@@ -18,6 +19,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/app" element={<AppPage />} />
         </Routes>
       </BrowserRouter>

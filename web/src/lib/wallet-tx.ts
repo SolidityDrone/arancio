@@ -6,6 +6,9 @@ import {
   SendOptions,
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
+import { formatSimHint } from "./tx-preview";
+import { formatTxError, isTxDenied, TxDeniedError } from "./tx-error";
+import { getTxModalState, txModal } from "./tx-modal-store";
 
 type Simulatable = Transaction | VersionedTransaction;
 
@@ -182,7 +185,22 @@ type SendableWallet = {
 export type SendCheckedOptions = SendOptions & {
   /** Called after Surfpool sim passes, before the wallet popup. */
   beforeWallet?: (sim: TxSimResult) => void;
+  /** Short label for the signing modal, e.g. "split" or "swap". */
+  modalLabel?: string;
+  /** Wait for on-chain confirmation and animate success/failure. Default true. */
+  waitForConfirmation?: boolean;
+  /** Skip the full-screen signing modal. */
+  skipModal?: boolean;
 };
+
+async function finishTxModalError(err: unknown, skipModal: boolean): Promise<void> {
+  if (skipModal) return;
+  if (isTxDenied(err)) {
+    await txModal.finishDenied();
+    return;
+  }
+  await txModal.finishError(formatTxError(err));
+}
 
 /**
  * Simulate on Surfpool, then send via the wallet adapter.
@@ -196,19 +214,60 @@ export async function sendTransactionChecked(
 ): Promise<string> {
   if (!wallet.publicKey) throw new Error("Wallet not connected");
 
-  const { beforeWallet, ...sendOpts } = options ?? {};
+  const {
+    beforeWallet,
+    modalLabel,
+    waitForConfirmation = true,
+    skipModal = false,
+    ...sendOpts
+  } = options ?? {};
 
   await prepareLegacyTransaction(connection, tx, wallet.publicKey);
   const sim = await simulateOrThrow(connection, tx);
+  const simHint = formatSimHint(sim);
+
+  if (!skipModal) {
+    txModal.showSigning(modalLabel, simHint || undefined);
+  }
   beforeWallet?.(sim);
 
   // Fresh blockhash right before wallet signAndSend (adapter refreshes again too).
   await refreshBlockhash(connection, tx);
 
-  return wallet.sendTransaction(tx, connection, {
-    skipPreflight: false,
-    preflightCommitment: "confirmed",
-    maxRetries: 3,
-    ...sendOpts,
-  });
+  let sig: string;
+  try {
+    sig = await wallet.sendTransaction(tx, connection, {
+      skipPreflight: false,
+      preflightCommitment: "confirmed",
+      maxRetries: 3,
+      ...sendOpts,
+    });
+  } catch (err) {
+    await finishTxModalError(err, skipModal);
+    throw isTxDenied(err) ? new TxDeniedError() : err;
+  }
+
+  if (waitForConfirmation) {
+    if (!skipModal) txModal.showConfirming();
+    try {
+      const confirmation = await connection.confirmTransaction(
+        sig,
+        "confirmed"
+      );
+      if (confirmation.value.err) {
+        const msg = `On-chain error: ${JSON.stringify(confirmation.value.err)}`;
+        if (!skipModal) await txModal.finishError(msg);
+        throw new Error(msg);
+      }
+    } catch (err) {
+      const phase = getTxModalState().phase;
+      if (!skipModal && phase !== "error" && phase !== "denied") {
+        await finishTxModalError(err, false);
+      }
+      throw isTxDenied(err) ? new TxDeniedError() : err;
+    }
+  }
+
+  if (!skipModal) await txModal.finishSuccess();
+  return sig;
 }

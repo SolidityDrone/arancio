@@ -6,9 +6,12 @@ const ACTIVITY_KEY = "divstrip.desk.activity.v1";
 export type DeskActivityKind =
   | "split"
   | "dbc_launch"
+  | "dbc_swap"
   | "redeem_pt"
   | "redeem_yt"
   | "unwrap";
+
+export type ActivityFilter = "all" | "bonding" | "split" | "redemption";
 
 export type DeskActivity = {
   id: string;
@@ -18,9 +21,11 @@ export type DeskActivity = {
   targetNonce: number;
   at: number;
   signature: string;
-  /** Human amount for splits / redeems */
+  /** Human amount for splits / redeems / swaps */
   amount?: string;
   amountSymbol?: string;
+  /** Bonding-curve buy YT (SOL in) or sell YT (YT in). */
+  swapSide?: "buy" | "sell";
   pool?: string;
   baseMint?: string;
   quoteMint?: string;
@@ -103,12 +108,47 @@ export function activitiesForSymbol(symbol: string): DeskActivity[] {
   return loadDeskActivities().filter((a) => a.symbol === symbol);
 }
 
+export function matchesActivityFilter(
+  kind: DeskActivityKind,
+  filter: ActivityFilter
+): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "bonding":
+      return kind === "dbc_launch" || kind === "dbc_swap";
+    case "split":
+      return kind === "split";
+    case "redemption":
+      return kind === "redeem_pt" || kind === "redeem_yt" || kind === "unwrap";
+    default:
+      return true;
+  }
+}
+
+export function filterActivities(
+  activities: DeskActivity[],
+  filter: ActivityFilter
+): DeskActivity[] {
+  if (filter === "all") return activities;
+  return activities.filter((a) => matchesActivityFilter(a.kind, filter));
+}
+
+export const ACTIVITY_FILTERS: { id: ActivityFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "bonding", label: "Bonding curve" },
+  { id: "split", label: "Splits" },
+  { id: "redemption", label: "Redemption" },
+];
+
 export function activityKindLabel(kind: DeskActivityKind): string {
   switch (kind) {
     case "split":
       return "Split";
     case "dbc_launch":
-      return "Meteora DBC";
+      return "DBC launch";
+    case "dbc_swap":
+      return "Curve swap";
     case "redeem_pt":
       return "Redeem PT";
     case "redeem_yt":

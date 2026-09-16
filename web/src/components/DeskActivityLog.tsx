@@ -1,5 +1,9 @@
+import { useMemo, useState } from "react";
 import {
+  ACTIVITY_FILTERS,
   activityKindLabel,
+  filterActivities,
+  type ActivityFilter,
   type DeskActivity,
 } from "../lib/desk-activity";
 import { solscanTxUrl } from "../lib/solscan";
@@ -28,6 +32,12 @@ function activitySummary(row: DeskActivity): string {
         : window;
     case "dbc_launch":
       return `YT pool · ${window}`;
+    case "dbc_swap": {
+      const dir = row.swapSide === "sell" ? "Sell YT" : "Buy YT";
+      return row.amount
+        ? `${dir} · ${row.amount} ${row.amountSymbol ?? "SOL"} · ${window}`
+        : `${dir} · ${window}`;
+    }
     case "redeem_pt":
       return row.amount
         ? `${row.amount} ${row.amountSymbol ?? row.symbol} capital · ${window}`
@@ -45,21 +55,69 @@ function activitySummary(row: DeskActivity): string {
   }
 }
 
+const EMPTY_BY_FILTER: Record<ActivityFilter, string> = {
+  all: "No transactions yet — split or swap to log your first action here.",
+  bonding: "No bonding-curve actions yet — launch or swap on the DBC above.",
+  split: "No splits logged yet — split xStock into PT + YT above.",
+  redemption: "No redemptions yet — redeem PT/YT when a window matures.",
+};
+
 export function DeskActivityLog({ rpcEndpoint, symbol, activities }: Props) {
+  const [filter, setFilter] = useState<ActivityFilter>("all");
+
+  const filtered = useMemo(
+    () => filterActivities(activities, filter),
+    [activities, filter]
+  );
+
+  const counts = useMemo(() => {
+    const tally: Record<ActivityFilter, number> = {
+      all: activities.length,
+      bonding: filterActivities(activities, "bonding").length,
+      split: filterActivities(activities, "split").length,
+      redemption: filterActivities(activities, "redemption").length,
+    };
+    return tally;
+  }, [activities]);
+
   return (
     <section className="desk-activity" aria-labelledby="activity-heading">
       <header className="desk-activity-head">
-        <h2 id="activity-heading">History</h2>
+        <div className="desk-activity-head-row">
+          <h2 id="activity-heading">History</h2>
+          <span className="desk-activity-count mono">{activities.length}</span>
+        </div>
         <p className="hint">On-chain actions for {symbol} on this RPC.</p>
+        <div
+          className="activity-filters"
+          role="tablist"
+          aria-label="Filter history by action type"
+        >
+          {ACTIVITY_FILTERS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={filter === id}
+              className={filter === id ? "active" : ""}
+              onClick={() => setFilter(id)}
+            >
+              {label}
+              <span className="activity-filter-count">{counts[id]}</span>
+            </button>
+          ))}
+        </div>
       </header>
 
-      {activities.length === 0 ? (
+      {filtered.length === 0 ? (
         <p className="hint desk-activity-empty">
-          No transactions yet — split {symbol} above to log your first action here.
+          {activities.length === 0
+            ? EMPTY_BY_FILTER.all.replace("split or swap", `split ${symbol} or swap`)
+            : EMPTY_BY_FILTER[filter]}
         </p>
       ) : (
         <ul className="activity-list">
-          {activities.map((row) => (
+          {filtered.map((row) => (
             <li key={row.id} className="activity-row">
               <div className="activity-row-main">
                 <span className={`activity-kind activity-kind-${row.kind}`}>

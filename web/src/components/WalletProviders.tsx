@@ -10,6 +10,7 @@ import {
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
 import { DEFAULT_RPC } from "../lib/markets";
+import { TxConfirmModal } from "./TxConfirmModal";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 const APP_ICON =
@@ -42,7 +43,10 @@ export function WalletProviders({ children }: { children: React.ReactNode }) {
       config={{ commitment: "confirmed", confirmTransactionInitialTimeout: 60_000 }}
     >
       <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
+        <WalletModalProvider>
+          {children}
+          <TxConfirmModal />
+        </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
   );

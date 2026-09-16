@@ -12,23 +12,33 @@ import {
   type DbcPoolSnapshot,
   type DbcSwapQuote,
 } from "../lib/dbc-pool-desk";
+import { appendDeskActivity } from "../lib/desk-activity";
 import { sendTransactionChecked } from "../lib/wallet-tx";
+import { formatTxError } from "../lib/tx-error";
 import { formatSimHint } from "../lib/tx-preview";
 
 type Props = {
   connection: Connection;
   rpcEndpoint: string;
   pool: string;
+  symbol: string;
+  startNonce: number;
+  targetNonce: number;
   baseMint?: string;
   quoteMint?: string;
   ytSymbol?: string;
+  onActivityLogged?: () => void;
 };
 
 export function DbcPoolPanel({
   connection,
   rpcEndpoint,
   pool,
+  symbol,
+  startNonce,
+  targetNonce,
   ytSymbol = "YT",
+  onActivityLogged,
 }: Props) {
   const wallet = useWallet();
   const local = isLocalRpc(rpcEndpoint);
@@ -113,14 +123,27 @@ export function DbcPoolPanel({
         quote
       );
       const sig = await sendTransactionChecked(connection, tx, wallet, {
+        modalLabel: "swap",
         beforeWallet: (sim) =>
           setStatus(`${formatSimHint(sim)} · confirm swap in wallet`),
       });
-      await connection.confirmTransaction(sig, "confirmed");
+      appendDeskActivity({
+        kind: "dbc_swap",
+        symbol,
+        startNonce,
+        targetNonce,
+        at: Date.now(),
+        signature: sig,
+        pool,
+        amount: amount.trim(),
+        amountSymbol: side === "buy" ? "SOL" : ytSymbol,
+        swapSide: side,
+      });
+      onActivityLogged?.();
       setStatus(`Swap confirmed · ${sig.slice(0, 10)}…`);
       await refresh();
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Swap failed");
+      setStatus(formatTxError(e));
     } finally {
       setBusy(false);
     }

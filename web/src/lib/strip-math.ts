@@ -1,4 +1,4 @@
-import { MULTIPLIER_SCALE } from "./markets";
+import { MULTIPLIER_SCALE, SHARE_DECIMALS } from "./markets";
 
 export type WindowPhase = "forward" | "locked" | "mature";
 
@@ -52,6 +52,27 @@ export function formatRawAmount(raw: bigint, decimals: number): string {
   if (frac === 0n) return whole.toString();
   const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
   return `${whole}.${fracStr}`;
+}
+
+/** Format leg raw balance using on-chain PT/YT mint decimals (6). */
+export function formatShareAmount(raw: bigint): string {
+  return formatRawAmount(raw, SHARE_DECIMALS);
+}
+
+/**
+ * Parse a human amount into raw token units.
+ * Prefer string input to avoid float rounding on large balances.
+ */
+export function uiAmountToRaw(amount: string | number, decimals: number): bigint {
+  const trimmed =
+    typeof amount === "number"
+      ? amount.toFixed(Math.min(decimals, 12))
+      : amount.trim();
+  if (!trimmed || !/^\d*\.?\d+$/.test(trimmed)) return 0n;
+  const [whole, frac = ""] = trimmed.split(".");
+  if (frac.length > decimals) return 0n;
+  const padded = frac.padEnd(decimals, "0");
+  return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(padded || "0");
 }
 
 export function defaultCumY(cum: bigint | null): bigint {

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { ChainlinkCreBadge } from "../components/ChainlinkCreBadge";
 import { Nav } from "../components/Nav";
 import { SceneBackdrop } from "../components/SceneBackdrop";
 import { StockLogo } from "../components/StockLogo";
@@ -30,6 +31,9 @@ export function LandingPage() {
                 </Link>
                 <a className="btn btn-ghost" href="#how">
                   How it works
+                </a>
+                <a className="btn btn-ghost" href="#oracle">
+                  Why the oracle
                 </a>
               </div>
             </div>
@@ -92,6 +96,10 @@ export function LandingPage() {
                 </div>
               </div>
             </div>
+
+            <div className="hero-powered-row">
+              <ChainlinkCreBadge variant="hero" />
+            </div>
           </div>
         </div>
       </section>
@@ -153,6 +161,104 @@ export function LandingPage() {
               <p>
                 Capital redeems <code>Yₛ/Yₜ</code>; yield redeems{" "}
                 <code>1 − Yₛ/Yₜ</code>. Late YT never pays the live multiplier.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="section section-oracle" id="oracle">
+          <div className="section-rail">
+            <h2>Why we need Chainlink CRE</h2>
+            <p className="lead">
+              On-chain xStocks only expose a multiplier change. CRE is the oracle
+              that tells DivStrip whether that change was a dividend or a
+              split — so yield windows stay honest.
+            </p>
+          </div>
+
+          <div className="oracle-grid">
+            <article className="oracle-card oracle-card-problem">
+              <h3>The on-chain blind spot</h3>
+              <p>
+                Token-2022 xStocks track corporate actions as a single number:
+                multiplier goes from <code>1.0000</code> →{" "}
+                <code>1.0120</code>. That could mean:
+              </p>
+              <ul className="oracle-list">
+                <li>
+                  <strong>Cash or stock dividend</strong> — you earned yield; the
+                  yield nonce should tick forward.
+                </li>
+                <li>
+                  <strong>Forward or reverse split</strong> — share count
+                  changed; supply adjusted, but no new coupon for YT holders.
+                </li>
+                <li>
+                  <strong>Spin-off</strong> — different story again.
+                </li>
+              </ul>
+              <p className="oracle-callout">
+                The chain sees the same multiplier math for all of them. It
+                cannot tell a dividend from a split by itself — so it cannot
+                know which events count toward a strip window.
+              </p>
+            </article>
+
+            <article className="oracle-card oracle-card-flow">
+              <h3>How CRE fixes it</h3>
+              <ol className="oracle-steps">
+                <li>
+                  <span className="oracle-step-n">1</span>
+                  <div>
+                    <strong>Read the real calendar</strong>
+                    <p>
+                      Chainlink CRE pulls structured corporate-action data from
+                      xStocks (type, effective date, multipliers).
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span className="oracle-step-n">2</span>
+                  <div>
+                    <strong>Label each event</strong>
+                    <p>
+                      Cash/stock dividends → <code>kind = yield</code>.
+                      Forward/reverse splits → <code>kind = supply</code>.
+                      Spin-offs → <code>kind = other</code>.
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span className="oracle-step-n">3</span>
+                  <div>
+                    <strong>Write <code>ca_registry</code></strong>
+                    <p>
+                      CRE syncs typed events on-chain. DivStrip reads{" "}
+                      <code>current_yield_nonce</code> and{" "}
+                      <code>cum_y</code> from that log — not from guessing
+                      multipliers.
+                    </p>
+                  </div>
+                </li>
+              </ol>
+              <ChainlinkCreBadge className="oracle-badge-inline" />
+            </article>
+          </div>
+
+          <div className="oracle-compare">
+            <div className="oracle-compare-col oracle-compare-bad">
+              <span className="oracle-compare-label">Without oracle</span>
+              <p>
+                Every multiplier bump looks like “maybe yield.” Strip windows,
+                fair coupon, and YT pricing would be wrong after splits.
+              </p>
+            </div>
+            <div className="oracle-compare-col oracle-compare-good">
+              <span className="oracle-compare-label">With Chainlink CRE</span>
+              <p>
+                Only dividend events advance the yield nonce. PT/YT splits lock
+                to the right maturity, and Meteora curves seed from a fair
+                coupon you can trust.
               </p>
             </div>
           </div>

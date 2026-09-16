@@ -8,6 +8,9 @@ export const DEFAULT_RPC =
 
 export const MULTIPLIER_SCALE = 1_000_000_000_000n;
 
+/** PT/YT mint decimals on divstrip (underlying xStock is typically 8). */
+export const SHARE_DECIMALS = 6;
+
 export type MarketSector =
   | "Mag 7"
   | "Index"

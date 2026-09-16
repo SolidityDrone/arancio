@@ -13,13 +13,7 @@ export function Nav() {
             Overview
           </NavLink>
           <NavLink to="/app">Strip desk</NavLink>
-          <a
-            href="https://hackathons.solana.com/hackathons/stocklana"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Stocklana
-          </a>
+          <NavLink to="/dashboard">Dashboard</NavLink>
         </nav>
         <WalletMultiButton />
       </div>
