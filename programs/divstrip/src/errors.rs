@@ -20,4 +20,10 @@ pub enum DivStripError {
     YieldNonceNotFound,
     #[msg("token program mismatch")]
     InvalidTokenProgram,
+    #[msg("invalid forwarder authority")]
+    InvalidForwarderAuthority,
+    #[msg("launch report mint mismatch")]
+    LaunchMintMismatch,
+    #[msg("invalid launch report encoding")]
+    InvalidLaunchPayload,
 }

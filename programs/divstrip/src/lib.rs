@@ -12,11 +12,22 @@ use anchor_spl::{
 use ca_registry::state::{RegistryLog, MULTIPLIER_SCALE};
 use errors::DivStripError;
 use state::{
-    StripMarket, StripSeries, MAX_SYMBOL_LEN, PT_MINT_SEED, SERIES_SEED, SHARE_DECIMALS,
-    STRIP_SEED, VAULT_SEED, YT_MINT_SEED,
+    LaunchYtReport, StripMarket, StripSeries, MAX_SYMBOL_LEN, PT_MINT_SEED, SERIES_SEED,
+    SHARE_DECIMALS, STRIP_SEED, VAULT_SEED, YT_MINT_SEED,
 };
 
 declare_id!("A36nL7RVFp8KFWQdWmmS8wTnws1NoR3Vb4cbmChyhexz");
+
+/// Keeps LaunchYtReport in the Anchor IDL for CRE WriteReportFromLaunchYtReport.
+#[event]
+pub struct YtLaunchRequested {
+    pub mint: Pubkey,
+    pub start_nonce: u32,
+    pub target_nonce: u32,
+    pub cum_y_start: u64,
+    pub lock_nonces: u32,
+    pub report: LaunchYtReport,
+}
 
 #[program]
 pub mod divstrip {
@@ -210,6 +221,58 @@ pub mod divstrip {
 
     pub fn redeem_yield(ctx: Context<RedeemLeg>, amount: u64) -> Result<()> {
         redeem_leg(ctx, amount, false)
+    }
+
+    /// CRE path (Option A): after a Yield CA is written to ca_registry, the same
+    /// workflow WriteReports here. We emit `YtLaunchRequested` for window
+    /// `[current_yield_nonce, current + lock_nonces]` so a desk/crank can create
+    /// the Meteora DBC→DAMM pool (DBC create needs keypair signers CRE cannot supply).
+    pub fn on_report(
+        ctx: Context<OnReport>,
+        _metadata: Vec<u8>,
+        report: Vec<u8>,
+    ) -> Result<()> {
+        verify_forwarder_authority(&ctx)?;
+
+        let launch = LaunchYtReport::try_from_slice(&report)
+            .map_err(|_| error!(DivStripError::InvalidLaunchPayload))?;
+
+        require_keys_eq!(
+            launch.mint,
+            ctx.accounts.registry.mint,
+            DivStripError::LaunchMintMismatch
+        );
+        require_keys_eq!(
+            launch.mint,
+            ctx.accounts.market.underlying_mint,
+            DivStripError::LaunchMintMismatch
+        );
+
+        let lock = if launch.lock_nonces == 0 {
+            ctx.accounts.market.default_lock_nonces
+        } else {
+            launch.lock_nonces
+        };
+        require!(lock > 0, DivStripError::InvalidLockNonces);
+
+        let start = ctx.accounts.registry.current_yield_nonce;
+        let target = start.saturating_add(lock);
+        let start_event = ctx
+            .accounts
+            .registry
+            .find_yield_nonce(start)
+            .ok_or(DivStripError::YieldNonceNotFound)?;
+
+        emit!(YtLaunchRequested {
+            mint: launch.mint,
+            start_nonce: start,
+            target_nonce: target,
+            cum_y_start: start_event.cum_y,
+            lock_nonces: lock,
+            report: launch,
+        });
+
+        Ok(())
     }
 }
 
@@ -507,4 +570,39 @@ pub struct RedeemLeg<'info> {
     pub vault_authority: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
     pub leg_token_program: Interface<'info, TokenInterface>,
+}
+
+fn verify_forwarder_authority(ctx: &Context<OnReport>) -> Result<()> {
+    let forwarder_program = ctx.accounts.state.owner;
+    let (expected_authority, _bump) = Pubkey::find_program_address(
+        &[
+            b"forwarder",
+            ctx.accounts.state.key.as_ref(),
+            crate::ID.as_ref(),
+        ],
+        forwarder_program,
+    );
+    require_keys_eq!(
+        ctx.accounts.forwarder_authority.key(),
+        expected_authority,
+        DivStripError::InvalidForwarderAuthority
+    );
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct OnReport<'info> {
+    /// CHECK: Keystone forwarder state; owner is the forwarder program.
+    pub state: UncheckedAccount<'info>,
+    pub forwarder_authority: Signer<'info>,
+    #[account(
+        constraint = registry.mint == market.underlying_mint @ DivStripError::RegistryMintMismatch
+    )]
+    pub registry: Box<Account<'info, RegistryLog>>,
+    #[account(
+        seeds = [STRIP_SEED, market.underlying_mint.as_ref()],
+        bump = market.bump,
+        constraint = market.registry == registry.key() @ DivStripError::RegistryMintMismatch
+    )]
+    pub market: Box<Account<'info, StripMarket>>,
 }

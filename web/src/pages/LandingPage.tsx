@@ -21,9 +21,9 @@ export function LandingPage() {
           <Link className="btn btn-primary" to="/app">
             Open strip desk →
           </Link>
-          <a className="btn btn-ghost" href="#how">
-            How the split works
-          </a>
+          <Link className="btn btn-ghost" to="/app">
+            Launch YT on Meteora
+          </Link>
         </div>
         <div className="stats">
           <div className="stat">
@@ -39,8 +39,8 @@ export function LandingPage() {
             <div className="value">1 − Yₛ/Yₜ</div>
           </div>
           <div className="stat">
-            <div className="label">◆ Network</div>
-            <div className="value">Solana</div>
+            <div className="label">◆ Venue</div>
+            <div className="value">DBC→DAMM</div>
           </div>
         </div>
       </section>
@@ -125,6 +125,17 @@ export function LandingPage() {
               <p>
                 Alice wraps (0→2), Bob wraps (1→2). Same maturity, different
                 frozen coupons — the ERC-8056 worked example, live on xStocks.
+              </p>
+            </div>
+          </article>
+          <article className="usecase">
+            <div className="tag">Meteora</div>
+            <div>
+              <h3>YT launch on DBC → DAMM v2</h3>
+              <p>
+                Each yield window gets a Dynamic Bonding Curve listing seeded
+                from the registry fair coupon, then graduates to DAMM v2 for
+                lasting liquidity — equity-strip discovery, not memecoin meta.
               </p>
             </div>
           </article>

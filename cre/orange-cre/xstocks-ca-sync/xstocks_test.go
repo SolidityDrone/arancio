@@ -5,6 +5,15 @@ import (
 	"time"
 )
 
+func TestEffectiveLockNonces(t *testing.T) {
+	if got := effectiveLockNonces(&Config{}); got != 2 {
+		t.Fatalf("default lockNonces: got %d want 2", got)
+	}
+	if got := effectiveLockNonces(&Config{LockNonces: 3}); got != 3 {
+		t.Fatalf("explicit lockNonces: got %d want 3", got)
+	}
+}
+
 func TestCaTypeToKind(t *testing.T) {
 	if kind, ok := caTypeToKind("CashDividend"); !ok || kind != 0 {
 		t.Fatalf("CashDividend: got kind=%d ok=%v", kind, ok)

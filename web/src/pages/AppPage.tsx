@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import {
@@ -13,13 +13,25 @@ import { Nav } from "../components/Nav";
 import {
   DIVSTRIP_PROGRAM_ID,
   MARKETS,
-  MarketConfig,
   couponFromCum,
   MULTIPLIER_SCALE,
 } from "../lib/markets";
+import {
+  buildLaunchYtOnDbc,
+  buildYtStripCurve,
+  fetchPoolProgress,
+  loadLaunches,
+  migratorUrl,
+  saveLaunch,
+  StoredLaunch,
+  WSOL_MINT,
+} from "../lib/meteora-dbc";
 import idl from "../lib/divstrip.json";
 
 const PROGRAM_ID = new PublicKey(DIVSTRIP_PROGRAM_ID);
+const REGISTRY_ID = new PublicKey(
+  "2WSNFu4xuaH55gpMRBN1p64YuiUXZzyze38ERXEy1U1z"
+);
 
 function marketPda(mint: PublicKey) {
   return PublicKey.findProgramAddressSync(
@@ -68,6 +80,16 @@ function vaultAuthority(market: PublicKey) {
   )[0];
 }
 
+function readYieldNonce(data: Buffer): number {
+  const nonceOffset = 8 + 32 + 32 + 32 + 8 + 1 + 1 + 8 + 8;
+  return data.readUInt32LE(nonceOffset);
+}
+
+function readCumY(data: Buffer): bigint {
+  const offset = 8 + 32 + 32 + 32 + 8 + 1 + 1;
+  return data.readBigUInt64LE(offset);
+}
+
 export function AppPage() {
   const { connection } = useConnection();
   const wallet = useWallet();
@@ -75,6 +97,10 @@ export function AppPage() {
   const [amount, setAmount] = useState("1");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [windowStart, setWindowStart] = useState(0);
+  const [chainCumY, setChainCumY] = useState<bigint | null>(null);
+  const [launches, setLaunches] = useState<StoredLaunch[]>([]);
+  const [poolProgress, setPoolProgress] = useState<number | null>(null);
 
   const market = useMemo(
     () => MARKETS.find((m) => m.symbol === symbol) ?? MARKETS[0],
@@ -82,17 +108,96 @@ export function AppPage() {
   );
 
   const fairCoupon = useMemo(() => {
-    // Demo fair coupon assuming ~0.5% yield over the window when no chain read
+    if (chainCumY && chainCumY > 0n) {
+      // Approximate target cum as current tip grown by lock window demo factor
+      const target = BigInt(
+        Math.floor(
+          Number(chainCumY) * (1 + 0.004 * market.lockNonces)
+        )
+      );
+      return couponFromCum(chainCumY, target);
+    }
     const start = MULTIPLIER_SCALE;
     const target = BigInt(
       Math.floor(Number(MULTIPLIER_SCALE) * (1 + 0.004 * market.lockNonces))
     );
     return couponFromCum(start, target);
-  }, [market]);
+  }, [market, chainCumY]);
+
+  const curvePreview = useMemo(
+    () => buildYtStripCurve(fairCoupon),
+    [fairCoupon]
+  );
+
+  const windowTarget = windowStart + market.lockNonces;
+
+  useEffect(() => {
+    setLaunches(loadLaunches());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const underlying = new PublicKey(market.mint);
+        const registry = PublicKey.findProgramAddressSync(
+          [Buffer.from("registry"), underlying.toBuffer()],
+          REGISTRY_ID
+        )[0];
+        const info = await connection.getAccountInfo(registry);
+        if (!info || cancelled) {
+          setWindowStart(market.demo.yieldNonce);
+          setChainCumY(null);
+          return;
+        }
+        setWindowStart(readYieldNonce(info.data));
+        setChainCumY(readCumY(info.data));
+      } catch {
+        setWindowStart(market.demo.yieldNonce);
+        setChainCumY(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connection, market]);
+
+  useEffect(() => {
+    const launch = launches.find(
+      (l) =>
+        l.symbol === market.symbol &&
+        l.startNonce === windowStart &&
+        l.targetNonce === windowTarget
+    );
+    if (!launch) {
+      setPoolProgress(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const progress = await fetchPoolProgress(
+        connection,
+        new PublicKey(launch.pool)
+      );
+      if (!cancelled) {
+        setPoolProgress(progress?.quoteProgress ?? null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connection, launches, market.symbol, windowStart, windowTarget]);
+
+  const activeLaunch = launches.find(
+    (l) =>
+      l.symbol === market.symbol &&
+      l.startNonce === windowStart &&
+      l.targetNonce === windowTarget
+  );
 
   const split = useCallback(async () => {
     if (!wallet.publicKey || !wallet.sendTransaction) {
-      setStatus("Connect Phantom or MetaMask (Solana) to split on-chain.");
+      setStatus("Connect Phantom (or Solana MetaMask snap) to split on-chain.");
       return;
     }
     setBusy(true);
@@ -108,7 +213,7 @@ export function AppPage() {
       const marketKey = marketPda(underlying);
       const registry = PublicKey.findProgramAddressSync(
         [Buffer.from("registry"), underlying.toBuffer()],
-        new PublicKey("2WSNFu4xuaH55gpMRBN1p64YuiUXZzyze38ERXEy1U1z")
+        REGISTRY_ID
       )[0];
 
       const registryInfo = await connection.getAccountInfo(registry);
@@ -133,13 +238,11 @@ export function AppPage() {
             systemProgram: SystemProgram.programId,
           })
           .rpc();
-        marketInfo = await connection.getAccountInfo(marketKey);
       }
 
-      // current_yield_nonce offset in RegistryLog header
-      const nonceOffset = 8 + 32 + 32 + 32 + 8 + 1 + 1 + 8 + 8;
-      const start = registryInfo.data.readUInt32LE(nonceOffset);
+      const start = readYieldNonce(registryInfo.data);
       const target = start + market.lockNonces;
+      setWindowStart(start);
       const series = seriesPda(marketKey, start, target);
       const ptMint = ptMintPda(marketKey, start, target);
       const ytMint = ytMintPda(marketKey, start, target);
@@ -235,7 +338,7 @@ export function AppPage() {
         })
         .rpc();
 
-      setStatus(`Split confirmed · ${sig.slice(0, 8)}…`);
+      setStatus(`Split confirmed · ${sig.slice(0, 8)}… — launch YT on Meteora next`);
     } catch (err: any) {
       console.error(err);
       setStatus(err?.message ?? String(err));
@@ -244,23 +347,82 @@ export function AppPage() {
     }
   }, [amount, connection, market, wallet]);
 
+  const launchYt = useCallback(async () => {
+    if (!wallet.publicKey || !wallet.sendTransaction) {
+      setStatus("Connect a Solana wallet to launch on Meteora DBC.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Building Meteora DBC config + pool (DAMM v2 graduation)…");
+    try {
+      const launch = await buildLaunchYtOnDbc({
+        connection,
+        payer: wallet.publicKey,
+        quoteMint: WSOL_MINT,
+        window: {
+          symbol: market.symbol,
+          startNonce: windowStart,
+          targetNonce: windowTarget,
+          fairCoupon,
+        },
+      });
+
+      launch.transaction.partialSign(...launch.signers);
+      const sig = await wallet.sendTransaction(launch.transaction, connection, {
+        skipPreflight: false,
+      });
+      await connection.confirmTransaction(sig, "confirmed");
+
+      const stored: StoredLaunch = {
+        symbol: market.symbol,
+        startNonce: windowStart,
+        targetNonce: windowTarget,
+        fairCoupon,
+        config: launch.config.toBase58(),
+        pool: launch.pool.toBase58(),
+        baseMint: launch.baseMint.toBase58(),
+        quoteMint: launch.quoteMint.toBase58(),
+        initialMarketCap: launch.initialMarketCap,
+        migrationMarketCap: launch.migrationMarketCap,
+        launchedAt: Date.now(),
+      };
+      saveLaunch(stored);
+      setLaunches(loadLaunches());
+      setStatus(
+        `YT live on DBC · pool ${launch.pool.toBase58().slice(0, 8)}… · migrates to DAMM v2 at ~$${launch.migrationMarketCap.toLocaleString()} mcap`
+      );
+    } catch (err: any) {
+      console.error(err);
+      setStatus(err?.message ?? String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    connection,
+    fairCoupon,
+    market.symbol,
+    wallet,
+    windowStart,
+    windowTarget,
+  ]);
+
   return (
     <div className="shell">
       <Nav />
       <div className="app-header">
         <div>
-          <div className="eyebrow">◆ Strip desk</div>
-          <h1>Split an xStock</h1>
+          <div className="eyebrow">◆ Strip desk · Meteora DBC</div>
+          <h1>Split → launch YT</h1>
           <p>
-            Connect Phantom or a Solana-enabled MetaMask snap. Local demo targets{" "}
-            <code>127.0.0.1:8899</code> (Surfpool).
+            Wrap an xStock into PT/YT, then price-discover the yield window on
+            Meteora Dynamic Bonding Curve (graduates to DAMM v2).
           </p>
         </div>
       </div>
 
       <div className="split-panel">
         <div className="panel">
-          <h2>Wrap</h2>
+          <h2>1 · Wrap</h2>
           <div className="field">
             <label>Underlying</label>
             <select
@@ -284,8 +446,11 @@ export function AppPage() {
             />
           </div>
           <div className="field">
-            <label>Lock window</label>
-            <input value={`${market.lockNonces} yield nonces`} disabled />
+            <label>Yield window</label>
+            <input
+              value={`nonce ${windowStart} → ${windowTarget}`}
+              disabled
+            />
           </div>
           <button
             className="btn btn-primary"
@@ -293,108 +458,146 @@ export function AppPage() {
             onClick={split}
             type="button"
           >
-            {busy ? "Splitting…" : "Split into PT + YT"}
+            {busy ? "Working…" : "Split into PT + YT"}
           </button>
           <p className="hint">
-            Unwrap burns both legs anytime at par. After maturity, redeem capital
-            / yield separately at the frozen coupon.
+            Escrows xStock and mints DivStrip PT/YT 1:1 for the frozen window.
           </p>
-          <div className="formula">
-            Fair coupon (illustrative):{" "}
-            <strong>{(fairCoupon * 100).toFixed(2)}%</strong> · window N=
-            {market.lockNonces}
-          </div>
-          <div className="status">{status}</div>
         </div>
 
         <div className="panel">
-          <h2>Selected market</h2>
-          <MarketDetail market={market} />
+          <h2>2 · Launch YT on Meteora</h2>
+          <div className="formula">
+            Fair coupon{" "}
+            <strong>{(fairCoupon * 100).toFixed(2)}%</strong>
+            <br />
+            DBC initial mcap ~$
+            {curvePreview.initialMarketCap.toLocaleString()} → DAMM v2 at ~$
+            {curvePreview.migrationMarketCap.toLocaleString()}
+          </div>
+          <p className="hint" style={{ marginTop: 12 }}>
+            Creates a DBC listing mint <code>YT{market.symbol}…</code> for this
+            window, quote = WSOL, migration = <strong>DAMM v2</strong>. Curve
+            fees start at 100bps and decay — equity-strip discovery, not meme
+            sniping.
+          </p>
+          <button
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={launchYt}
+            type="button"
+            style={{ marginTop: 14 }}
+          >
+            {busy ? "Launching…" : "Launch YT on Meteora DBC"}
+          </button>
+          {activeLaunch && (
+            <div className="hint" style={{ marginTop: 14 }}>
+              Pool <code>{activeLaunch.pool.slice(0, 8)}…</code>
+              {poolProgress != null && (
+                <> · curve {Math.round(poolProgress * 100)}%</>
+              )}
+              <br />
+              <a
+                href={migratorUrl(activeLaunch.pool)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open Meteora migrator →
+              </a>
+            </div>
+          )}
+          <div className="status">{status}</div>
         </div>
       </div>
 
       <div className="panel">
+        <h2>Window &amp; YT value</h2>
+        <div className="stats" style={{ marginTop: 8 }}>
+          <div className="stat">
+            <div className="label">◆ Window</div>
+            <div className="value" style={{ fontSize: 20 }}>
+              {windowStart}→{windowTarget}
+            </div>
+          </div>
+          <div className="stat">
+            <div className="label">◆ Fair coupon</div>
+            <div className="value" style={{ fontSize: 20 }}>
+              {(fairCoupon * 100).toFixed(2)}%
+            </div>
+          </div>
+          <div className="stat">
+            <div className="label">◆ Tip cum_y</div>
+            <div className="value" style={{ fontSize: 20 }}>
+              {chainCumY
+                ? (Number(chainCumY) / Number(MULTIPLIER_SCALE)).toFixed(4)
+                : market.demo.cumY}
+            </div>
+          </div>
+          <div className="stat">
+            <div className="label">◆ DBC→DAMM</div>
+            <div className="value" style={{ fontSize: 20 }}>
+              v2
+            </div>
+          </div>
+        </div>
+        <p className="hint" style={{ marginTop: 16 }}>
+          Late YT never pays live multiplier — coupon is frozen at wrap as{" "}
+          <code>1 − cum_y(start)/cum_y(target)</code>. Meteora price is the
+          market’s view vs that fair value.
+        </p>
+      </div>
+
+      <div className="panel" style={{ marginTop: 24 }}>
         <h2>Markets</h2>
         <table className="markets">
           <thead>
             <tr>
               <th>xStock</th>
               <th>PT</th>
-              <th>YT</th>
+              <th>YT / Meteora</th>
               <th>Stats</th>
             </tr>
           </thead>
           <tbody>
-            {MARKETS.map((m) => (
-              <tr key={m.symbol}>
-                <td>
-                  <div className="sym">{m.symbol}</div>
-                  <div className="hint">{m.name}</div>
-                </td>
-                <td>
-                  <span className="pill">xCapital-{m.symbol}</span>
-                  <div className="hint">Principal · ex-div path</div>
-                </td>
-                <td>
-                  <span className="pill">xYield-{m.symbol}</span>
-                  <div className="hint">
-                    Coupon claim · {m.lockNonces} nonces
-                  </div>
-                </td>
-                <td>
-                  <div>yield_nonce {m.demo.yieldNonce}</div>
-                  <div>cum_y {m.demo.cumY}</div>
-                  <div>events {m.demo.eventCount}</div>
-                  <div className="hint">{m.demo.nextDivHint}</div>
-                </td>
-              </tr>
-            ))}
+            {MARKETS.map((m) => {
+              const launch = launches.find((l) => l.symbol === m.symbol);
+              return (
+                <tr key={m.symbol}>
+                  <td>
+                    <div className="sym">{m.symbol}</div>
+                    <div className="hint">{m.name}</div>
+                  </td>
+                  <td>
+                    <span className="pill">xCapital-{m.symbol}</span>
+                    <div className="hint">Principal · ex-div path</div>
+                  </td>
+                  <td>
+                    <span className="pill">xYield-{m.symbol}</span>
+                    <div className="hint">
+                      {launch
+                        ? `DBC ${launch.pool.slice(0, 6)}… · fair ${(
+                            launch.fairCoupon * 100
+                          ).toFixed(2)}%`
+                        : `${m.lockNonces}-nonce window · launch on DBC`}
+                    </div>
+                  </td>
+                  <td>
+                    <div>yield_nonce {m.demo.yieldNonce}</div>
+                    <div>cum_y {m.demo.cumY}</div>
+                    <div>events {m.demo.eventCount}</div>
+                    <div className="hint">{m.demo.nextDivHint}</div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       <footer className="footer">
-        <span>DivStrip_ · ca_registry-backed windows</span>
+        <span>DivStrip_ · Meteora DBC → DAMM v2</span>
         <span>RPC {connection.rpcEndpoint}</span>
       </footer>
     </div>
-  );
-}
-
-function MarketDetail({ market }: { market: MarketConfig }) {
-  return (
-    <>
-      <div className="sym">{market.symbol}</div>
-      <p className="hint">{market.name}</p>
-      <div className="stats" style={{ marginTop: 20 }}>
-        <div className="stat">
-          <div className="label">◆ PT</div>
-          <div className="value" style={{ fontSize: 18 }}>
-            xCapital
-          </div>
-        </div>
-        <div className="stat">
-          <div className="label">◆ YT</div>
-          <div className="value" style={{ fontSize: 18 }}>
-            xYield
-          </div>
-        </div>
-        <div className="stat">
-          <div className="label">◆ Nonce</div>
-          <div className="value" style={{ fontSize: 18 }}>
-            {market.demo.yieldNonce}
-          </div>
-        </div>
-        <div className="stat">
-          <div className="label">◆ Events</div>
-          <div className="value" style={{ fontSize: 18 }}>
-            {market.demo.eventCount}
-          </div>
-        </div>
-      </div>
-      <p className="hint" style={{ marginTop: 16 }}>
-        Mint <code>{market.mint.slice(0, 4)}…{market.mint.slice(-4)}</code>
-      </p>
-    </>
   );
 }
