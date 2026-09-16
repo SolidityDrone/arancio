@@ -10,7 +10,9 @@
     {
       "name": "create_series",
       "docs": [
-        "Create PT/YT mints for window `[start_nonce, target_nonce]`."
+        "Create PT/YT mints for window `[start_nonce, target_nonce]`.",
+        "`start_nonce` may be the tip or a future tip (`>= current_yield_nonce`) so",
+        "desks can open forward strips (e.g. tip=4 → window 6→7)."
       ],
       "discriminator": [
         181,
@@ -247,6 +249,69 @@
         {
           "name": "default_lock_nonces",
           "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "on_report",
+      "docs": [
+        "CRE path (Option A): after a Yield CA is written to ca_registry, the same",
+        "workflow WriteReports here. We emit `YtLaunchRequested` for window",
+        "`[current_yield_nonce, current + lock_nonces]` so a desk/crank can create",
+        "the Meteora DBC→DAMM pool (DBC create needs keypair signers CRE cannot supply)."
+      ],
+      "discriminator": [
+        214,
+        173,
+        18,
+        221,
+        173,
+        148,
+        151,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "state"
+        },
+        {
+          "name": "forwarder_authority",
+          "signer": true
+        },
+        {
+          "name": "registry"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_metadata",
+          "type": "bytes"
+        },
+        {
+          "name": "report",
+          "type": "bytes"
         }
       ]
     },
@@ -657,7 +722,8 @@
     {
       "name": "wrap",
       "docs": [
-        "Escrow underlying and mint PT + YT 1:1 for the series window."
+        "Escrow underlying and mint PT + YT 1:1 for the series window.",
+        "Allowed while tip is still at or before the series start (spot or forward)."
       ],
       "discriminator": [
         178,
@@ -894,6 +960,21 @@
       ]
     }
   ],
+  "events": [
+    {
+      "name": "YtLaunchRequested",
+      "discriminator": [
+        164,
+        16,
+        218,
+        136,
+        106,
+        34,
+        143,
+        145
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -939,6 +1020,21 @@
       "code": 6008,
       "name": "InvalidTokenProgram",
       "msg": "token program mismatch"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidForwarderAuthority",
+      "msg": "invalid forwarder authority"
+    },
+    {
+      "code": 6010,
+      "name": "LaunchMintMismatch",
+      "msg": "launch report mint mismatch"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidLaunchPayload",
+      "msg": "invalid launch report encoding"
     }
   ],
   "types": [
@@ -986,6 +1082,25 @@
           },
           {
             "name": "yield_nonce",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LaunchYtReport",
+      "docs": [
+        "CRE WriteReport payload: after a Yield CA sync, request a YT window launch."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "lock_nonces",
             "type": "u32"
           }
         ]
@@ -1138,6 +1253,45 @@
               "Frozen at series creation from registry tip (updated on first wrap if 0 events)."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "YtLaunchRequested",
+      "docs": [
+        "Keeps LaunchYtReport in the Anchor IDL for CRE WriteReportFromLaunchYtReport."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "start_nonce",
+            "type": "u32"
+          },
+          {
+            "name": "target_nonce",
+            "type": "u32"
+          },
+          {
+            "name": "cum_y_start",
+            "type": "u64"
+          },
+          {
+            "name": "lock_nonces",
+            "type": "u32"
+          },
+          {
+            "name": "report",
+            "type": {
+              "defined": {
+                "name": "LaunchYtReport"
+              }
+            }
           }
         ]
       }

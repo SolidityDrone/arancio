@@ -4,6 +4,9 @@ Cron workflow that fetches xStocks v2 corporate-action history/upcoming for a
 configured symbol (default `KOx`), maps `caType` → `kind`, and writes one
 `SyncEvent` per run via Keystone `WriteReport` into `ca_registry.on_report`.
 
+Meteora DBC → DAMM is **not** part of this workflow. Users initialize (or
+discover) YT pools from the DivStrip desk for a chosen stock + window.
+
 ## Local Surfpool loop
 
 From the monorepo root (`orange/`):
@@ -60,18 +63,6 @@ expect a real `TxSignature` and `eventCount >= 1` on the KOx registry PDA
 | ForwardSplit / ReverseSplit | Supply (1) | advances `cum_s` only |
 | SpinOff | Other (2) | recorded; factors unchanged |
 
-## Option A — YT launch after Yield write
-
-When `launchYtOnYield` is true and the event written this run is `kind=Yield`,
-the same cron handler immediately `WriteReport`s a `LaunchYtReport` into
-`divstrip.on_report`. That instruction only emits `YtLaunchRequested`
-(`[current_yield_nonce, current + lock_nonces]`); it does **not** create the
-Meteora DBC pool (pool create needs keypair signers CRE cannot supply).
-
-Desk / crank listens for `YtLaunchRequested` and runs DBC→DAMM via the web
-helpers. Launch failure is soft: CA sync stays successful and
-`ytLaunchError` is returned in the workflow result.
-
 ## Config
 
 See `config.staging.json` / `config.production.json`:
@@ -80,6 +71,3 @@ See `config.staging.json` / `config.production.json`:
 - `maxEventsPerWrite`: `1`
 - `backfillMode`: `oldest`
 - `computeLimit`: `290000`
-- `launchYtOnYield`: `true` (chain LaunchYt after Yield CA writes)
-- `lockNonces`: `2` (YT window length; `0` → market default / workflow default 2)
-- `divstripProgramId`: DivStrip program (receiver for LaunchYt WriteReport)

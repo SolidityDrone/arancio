@@ -11,7 +11,6 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 
 	"orange-cre/contracts/solana/src/generated/ca_registry"
-	"orange-cre/contracts/solana/src/generated/divstrip"
 )
 
 func InitWorkflow(config *Config, logger *slog.Logger, secretsProvider cre.SecretsProvider) (cre.Workflow[*Config], error) {
@@ -119,30 +118,6 @@ func onCronTrigger(config *Config, runtime cre.Runtime, trigger *cron.Payload) (
 			"totalFetched", len(payload.Events),
 			"backfillMode", backfillMode,
 		)
-
-		// Option A: same workflow — after a Yield CA write, request YT DBC launch.
-		if config.LaunchYtOnYield && len(writeEvents) > 0 && writeEvents[0].Kind == kindYield {
-			kind := writeEvents[0].Kind
-			result.WroteKind = &kind
-			launchStatus, launchSig, launchErr := writeLaunchYt(config, runtime)
-			if launchErr != nil {
-				result.YtLaunchError = launchErr.Error()
-				logger.Info(
-					"YT launch WriteReport failed (CA sync still ok)",
-					"err", launchErr.Error(),
-				)
-			} else {
-				result.YtLaunchRequested = true
-				result.YtLaunchTxStatus = launchStatus
-				result.YtLaunchTxSignature = launchSig
-				logger.Info(
-					"requested YT window launch via divstrip.on_report",
-					"txStatus", launchStatus,
-					"txSignature", launchSig,
-					"lockNonces", effectiveLockNonces(config),
-				)
-			}
-		}
 	} else {
 		logger.Info(
 			"built CA sync payload (writeOnchain=false)",
@@ -153,109 +128,6 @@ func onCronTrigger(config *Config, runtime cre.Runtime, trigger *cron.Payload) (
 	}
 
 	return result, nil
-}
-
-func effectiveLockNonces(config *Config) uint32 {
-	if config.LockNonces == 0 {
-		return 2
-	}
-	return config.LockNonces
-}
-
-func writeLaunchYt(config *Config, runtime cre.Runtime) (string, string, error) {
-	divstripProgramID := config.DivstripProgramID
-	if divstripProgramID == "" {
-		divstripProgramID = "A36nL7RVFp8KFWQdWmmS8wTnws1NoR3Vb4cbmChyhexz"
-	}
-
-	client := &solana.Client{ChainSelector: config.ChainSelector}
-	strip, err := divstrip.NewDivstrip(client)
-	if err != nil {
-		return "", "", fmt.Errorf("new divstrip client: %w", err)
-	}
-
-	forwarderStatePk := solanago.MustPublicKeyFromBase58(config.ForwarderState)
-	divstripPk := solanago.MustPublicKeyFromBase58(divstripProgramID)
-	forwarderProgramPk := solanago.MustPublicKeyFromBase58(config.ForwarderProgramID)
-	mintPk := solanago.MustPublicKeyFromBase58(config.Mint)
-	registryProgramPk := solanago.MustPublicKeyFromBase58(config.ReceiverProgramID)
-
-	forwarderAuthority, _, err := solanago.FindProgramAddress(
-		[][]byte{
-			[]byte("forwarder"),
-			forwarderStatePk[:],
-			divstripPk[:],
-		},
-		forwarderProgramPk,
-	)
-	if err != nil {
-		return "", "", fmt.Errorf("derive divstrip forwarder authority: %w", err)
-	}
-
-	registryPda, _, err := solanago.FindProgramAddress(
-		[][]byte{
-			[]byte("registry"),
-			mintPk[:],
-		},
-		registryProgramPk,
-	)
-	if err != nil {
-		return "", "", fmt.Errorf("derive registry pda: %w", err)
-	}
-
-	marketPda, _, err := solanago.FindProgramAddress(
-		[][]byte{
-			[]byte("strip"),
-			mintPk[:],
-		},
-		divstripPk,
-	)
-	if err != nil {
-		return "", "", fmt.Errorf("derive strip market pda: %w", err)
-	}
-
-	accounts := []*solana.AccountMeta{
-		{PublicKey: forwarderStatePk[:], IsWritable: false},
-		{PublicKey: forwarderAuthority[:], IsWritable: false},
-		{PublicKey: registryPda[:], IsWritable: false},
-		{PublicKey: marketPda[:], IsWritable: false},
-	}
-
-	computeLimit := config.ComputeLimit
-	if computeLimit == 0 {
-		computeLimit = 290_000
-	}
-	computeConfig := &solana.ComputeConfig{ComputeLimit: computeLimit}
-
-	report := divstrip.LaunchYtReport{
-		Mint:       mintPk,
-		LockNonces: effectiveLockNonces(config),
-	}
-
-	runtime.Logger().Info(
-		"Submitting LaunchYtReport to divstrip.on_report",
-		"market", marketPda.String(),
-		"registry", registryPda.String(),
-		"lockNonces", report.LockNonces,
-	)
-
-	reply, err := strip.WriteReportFromLaunchYtReport(runtime, report, accounts, computeConfig).Await()
-	if err != nil {
-		return "", "", fmt.Errorf("WriteReportFromLaunchYtReport: %w", err)
-	}
-
-	txStatus := reply.GetTxStatus().String()
-	txSig := ""
-	if sig := reply.GetTxSignature(); len(sig) > 0 {
-		var signature solanago.Signature
-		copy(signature[:], sig)
-		txSig = signature.String()
-	}
-	if msg := reply.GetErrorMessage(); msg != "" {
-		runtime.Logger().Info("LaunchYt WriteReport errorMessage", "msg", msg)
-	}
-
-	return txStatus, txSig, nil
 }
 
 func writeSyncPayload(config *Config, runtime cre.Runtime, payload ca_registry.SyncPayload) (string, string, error) {

@@ -63,27 +63,38 @@ pub mod divstrip {
     }
 
     /// Create PT/YT mints for window `[start_nonce, target_nonce]`.
+    /// `start_nonce` may be the tip or a future tip (`>= current_yield_nonce`) so
+    /// desks can open forward strips (e.g. tip=4 → window 6→7).
     pub fn create_series(
         ctx: Context<CreateSeries>,
         start_nonce: u32,
         target_nonce: u32,
     ) -> Result<()> {
         require!(target_nonce > start_nonce, DivStripError::InvalidLockNonces);
+        require!(
+            target_nonce - start_nonce <= 32,
+            DivStripError::InvalidLockNonces
+        );
         require_keys_eq!(
             ctx.accounts.registry.mint,
             ctx.accounts.market.underlying_mint,
             DivStripError::RegistryMintMismatch
         );
         require!(
-            start_nonce == ctx.accounts.registry.current_yield_nonce,
+            start_nonce >= ctx.accounts.registry.current_yield_nonce,
             DivStripError::SeriesMismatch
         );
 
-        let start_event = ctx
-            .accounts
-            .registry
-            .find_yield_nonce(start_nonce)
-            .ok_or(DivStripError::YieldNonceNotFound)?;
+        // Tip windows pin cum_y now; forward windows resolve at redeem.
+        let cum_y_start = if start_nonce == ctx.accounts.registry.current_yield_nonce {
+            ctx.accounts
+                .registry
+                .find_yield_nonce(start_nonce)
+                .ok_or(DivStripError::YieldNonceNotFound)?
+                .cum_y
+        } else {
+            0
+        };
 
         let series = &mut ctx.accounts.series;
         series.market = ctx.accounts.market.key();
@@ -92,12 +103,13 @@ pub mod divstrip {
         series.target_nonce = target_nonce;
         series.pt_mint = ctx.accounts.pt_mint.key();
         series.yt_mint = ctx.accounts.yt_mint.key();
-        series.cum_y_start = start_event.cum_y;
+        series.cum_y_start = cum_y_start;
         series.bump = ctx.bumps.series;
         Ok(())
     }
 
     /// Escrow underlying and mint PT + YT 1:1 for the series window.
+    /// Allowed while tip is still at or before the series start (spot or forward).
     pub fn wrap(ctx: Context<Wrap>, amount: u64) -> Result<()> {
         require!(amount > 0, DivStripError::ZeroAmount);
         require_keys_eq!(
@@ -106,7 +118,7 @@ pub mod divstrip {
             DivStripError::RegistryMintMismatch
         );
         require!(
-            ctx.accounts.series.start_nonce == ctx.accounts.registry.current_yield_nonce,
+            ctx.accounts.registry.current_yield_nonce <= ctx.accounts.series.start_nonce,
             DivStripError::SeriesMismatch
         );
 
@@ -223,10 +235,9 @@ pub mod divstrip {
         redeem_leg(ctx, amount, false)
     }
 
-    /// CRE path (Option A): after a Yield CA is written to ca_registry, the same
-    /// workflow WriteReports here. We emit `YtLaunchRequested` for window
-    /// `[current_yield_nonce, current + lock_nonces]` so a desk/crank can create
-    /// the Meteora DBC→DAMM pool (DBC create needs keypair signers CRE cannot supply).
+    /// CRE path (optional / unused by xstocks-ca-sync): emit `YtLaunchRequested`
+    /// for `[current_yield_nonce, current + lock_nonces]`. Desk initializes
+    /// Meteora DBC→DAMM directly; this receiver is kept for optional cranks.
     pub fn on_report(
         ctx: Context<OnReport>,
         _metadata: Vec<u8>,
@@ -298,7 +309,22 @@ fn redeem_leg(ctx: Context<RedeemLeg>, amount: u64, is_capital: bool) -> Result<
         );
     }
 
-    let cum_start = ctx.accounts.series.cum_y_start;
+    let cum_start = {
+        let stored = ctx.accounts.series.cum_y_start;
+        if stored > 0 {
+            stored
+        } else {
+            // Forward series: resolve once the start nonce exists on registry.
+            let start_event = registry
+                .find_yield_nonce(ctx.accounts.series.start_nonce)
+                .ok_or(DivStripError::YieldNonceNotFound)?;
+            if start_event.cum_y == 0 {
+                MULTIPLIER_SCALE
+            } else {
+                start_event.cum_y
+            }
+        }
+    };
     let target_event = registry
         .find_yield_nonce(ctx.accounts.series.target_nonce)
         .ok_or(DivStripError::YieldNonceNotFound)?;

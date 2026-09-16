@@ -6,12 +6,9 @@
   "writeOnchain": true,
   "chainSelector": "124615329519749607",
   "receiverProgramId": "2WSNFu4xuaH55gpMRBN1p64YuiUXZzyze38ERXEy1U1z",
-  "divstripProgramId": "A36nL7RVFp8KFWQdWmmS8wTnws1NoR3Vb4cbmChyhexz",
   "forwarderProgramId": "GFrSSvQXaVGkc6Nrr8y2msie6pivJkR1s2EnDk4et294",
   "forwarderState": "9FgdPyU28bGMCuJyD34pzw9W7Ys36ziLbT9cbZtsaraV",
   "computeLimit": 290000,
   "maxEventsPerWrite": 1,
-  "backfillMode": "oldest",
-  "launchYtOnYield": true,
-  "lockNonces": 2
+  "backfillMode": "oldest"
 }

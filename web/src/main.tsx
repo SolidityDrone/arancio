@@ -8,6 +8,9 @@ import { AppPage } from "./pages/AppPage";
 import "./styles/global.css";
 
 (window as any).Buffer = Buffer;
+const proc = ((window as any).process ??= { env: {} as Record<string, string> });
+if (!proc.version) proc.version = "v18.0.0";
+if (proc.browser === undefined) proc.browser = true;
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

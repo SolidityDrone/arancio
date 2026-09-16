@@ -53,24 +53,16 @@ type Config struct {
 	ComputeLimit       uint32 `json:"computeLimit"`
 	MaxEventsPerWrite  int    `json:"maxEventsPerWrite"`
 	BackfillMode       string `json:"backfillMode"`
-	LaunchYtOnYield    bool   `json:"launchYtOnYield"`
-	LockNonces         uint32 `json:"lockNonces"`
-	DivstripProgramID  string `json:"divstripProgramId"`
 }
 
 type SyncResult struct {
-	Symbol              string `json:"symbol"`
-	Mint                string `json:"mint"`
-	EventCount          int    `json:"eventCount"`
-	InsertedCount       int    `json:"insertedCount"`
-	PayloadBase64       string `json:"payloadBase64"`
-	TxStatus            string `json:"txStatus,omitempty"`
-	TxSignature         string `json:"txSignature,omitempty"`
-	WroteKind           *uint8 `json:"wroteKind,omitempty"`
-	YtLaunchRequested   bool   `json:"ytLaunchRequested,omitempty"`
-	YtLaunchTxStatus    string `json:"ytLaunchTxStatus,omitempty"`
-	YtLaunchTxSignature string `json:"ytLaunchTxSignature,omitempty"`
-	YtLaunchError       string `json:"ytLaunchError,omitempty"`
+	Symbol        string `json:"symbol"`
+	Mint          string `json:"mint"`
+	EventCount    int    `json:"eventCount"`
+	InsertedCount int    `json:"insertedCount"`
+	PayloadBase64 string `json:"payloadBase64"`
+	TxStatus      string `json:"txStatus,omitempty"`
+	TxSignature   string `json:"txSignature,omitempty"`
 }
 
 func fetchCorporateActions(client *http.Client, url string) ([]apiCorporateAction, error) {

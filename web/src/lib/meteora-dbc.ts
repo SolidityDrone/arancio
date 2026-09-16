@@ -51,10 +51,9 @@ export type LaunchYtResult = {
  * migrate to DAMM v2 once discovery clears ~10× that level.
  */
 export function buildYtStripCurve(fairCoupon: number) {
-  const couponBps = Math.max(10, Math.round(fairCoupon * 10_000)); // floor 0.10%
-  // Treat $1 notional × coupon as income value; scale to a discoverable mcap band.
-  const initialMarketCap = Math.max(1_000, couponBps * 50); // e.g. 50bps → $2.5k
-  const migrationMarketCap = initialMarketCap * 10;
+  // Market caps are in WSOL (SOL) units — Meteora DBC validates supply against these.
+  const initialMarketCap = Math.max(30, 30 + Math.round(fairCoupon * 500));
+  const migrationMarketCap = Math.max(600, initialMarketCap * 20);
 
   const configParams = buildCurveWithMarketCap({
     token: {
@@ -62,7 +61,7 @@ export function buildYtStripCurve(fairCoupon: number) {
       tokenBaseDecimal: TokenDecimal.SIX,
       tokenQuoteDecimal: TokenDecimal.NINE, // WSOL
       tokenAuthorityOption: TokenAuthorityOption.Immutable,
-      totalTokenSupply: 1_000_000_000, // 1000 with 6 decimals display as 1000e6 raw units in UI elsewhere
+      totalTokenSupply: 1_000_000_000,
       leftover: 0,
     },
     fee: {
@@ -72,7 +71,7 @@ export function buildYtStripCurve(fairCoupon: number) {
           startingFeeBps: 100,
           endingFeeBps: 30,
           numberOfPeriod: 50,
-          totalDuration: 50 * 60, // ~decay over slots/seconds depending on activation
+          totalDuration: 50 * 60,
         },
       },
       dynamicFeeEnabled: true,
@@ -84,16 +83,17 @@ export function buildYtStripCurve(fairCoupon: number) {
     migration: {
       migrationOption: MigrationOption.MET_DAMM_V2,
       migrationFeeOption: MigrationFeeOption.FixedBps100,
+      // Non-zero migration fee breaks create_config on Surfpool (InvalidTokenSupply 6020).
       migrationFee: {
-        feePercentage: 2,
-        creatorFeePercentage: 50,
+        feePercentage: 0,
+        creatorFeePercentage: 0,
       },
     },
     liquidityDistribution: {
-      partnerPermanentLockedLiquidityPercentage: 0,
-      partnerLiquidityPercentage: 0,
-      creatorPermanentLockedLiquidityPercentage: 25,
-      creatorLiquidityPercentage: 75,
+      partnerPermanentLockedLiquidityPercentage: 45,
+      partnerLiquidityPercentage: 55,
+      creatorPermanentLockedLiquidityPercentage: 0,
+      creatorLiquidityPercentage: 0,
     },
     lockedVesting: {
       totalLockedVestingAmount: 0,
@@ -102,7 +102,7 @@ export function buildYtStripCurve(fairCoupon: number) {
       totalVestingDuration: 0,
       cliffDurationFromMigrationTime: 0,
     },
-    activationType: ActivationType.Slot,
+    activationType: ActivationType.Timestamp,
     initialMarketCap,
     migrationMarketCap,
   });
@@ -126,7 +126,7 @@ export async function buildLaunchYtOnDbc(args: {
 
   const name = `${args.window.symbol} Yield ${args.window.startNonce}-${args.window.targetNonce}`;
   const symbol = `YT${args.window.symbol}${args.window.startNonce}`.slice(0, 10);
-  const uri = `https://divstrip.local/yt/${args.window.symbol}/${args.window.startNonce}-${args.window.targetNonce}`;
+  const uri = `https://xstocks.fi/assets/${encodeURIComponent(args.window.symbol)}`;
 
   const transaction = await client.partner.createConfigAndPool({
     ...configParams,
@@ -224,6 +224,7 @@ export type StoredLaunch = {
   initialMarketCap: number;
   migrationMarketCap: number;
   launchedAt: number;
+  launchSignature?: string;
 };
 
 export function loadLaunches(): StoredLaunch[] {
@@ -249,4 +250,13 @@ export function saveLaunch(launch: StoredLaunch) {
 
 export function migratorUrl(pool: string) {
   return `https://migrator.meteora.ag/?pool=${pool}`;
+}
+
+/** Meteora app pool page (DBC pre-migrate or DAMM post-migrate). */
+export function meteoraAppPoolUrl(pool: string) {
+  return `https://app.meteora.ag/pools/${pool}`;
+}
+
+export function jupiterSwapUrl(inputMint: string, outputMint: string) {
+  return `https://jup.ag/swap/${inputMint}-${outputMint}`;
 }
