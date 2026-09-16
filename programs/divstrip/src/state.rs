@@ -9,6 +9,13 @@ pub const MAX_SYMBOL_LEN: usize = 8;
 pub const SHARE_DECIMALS: u8 = 6;
 pub const COUPON_SCALE: u128 = 1_000_000_000_000;
 
+/// CRE WriteReport payload: after a Yield CA sync, request a YT window launch.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct LaunchYtReport {
+    pub mint: Pubkey,
+    pub lock_nonces: u32,
+}
+
 #[account]
 pub struct StripMarket {
     pub authority: Pubkey,
