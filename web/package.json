@@ -11,6 +11,7 @@
   "dependencies": {
     "@anchor-lang/core": "1.1.2",
     "@meteora-ag/dynamic-bonding-curve-sdk": "^1.5.12",
+    "@noble/hashes": "^1.8.0",
     "@solana/spl-token": "^0.4.13",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
@@ -27,6 +28,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.63.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
     "vite-plugin-node-polyfills": "^0.23.0"

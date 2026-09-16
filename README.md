@@ -14,6 +14,13 @@ scaffolding. DivStrip (PT/YT) builds on `ca_registry`.
 yarn install
 ```
 
+## Reproduce locally (Surfpool + web desk)
+
+**Full step-by-step:** [`REPRODUCE_SURFPOOL.md`](REPRODUCE_SURFPOOL.md)
+
+Covers Surfpool start, deploy, seed `ca_registry` for KOx, launch the web app,
+Phantom/Solflare signing, WSL RPC, and wallet funding on the fork.
+
 ## Local Test RPC
 
 ```bash
@@ -48,43 +55,17 @@ yarn test:anchor
 
 ## DivStrip web desk
 
-Stocklana-styled landing + strip UI (Phantom / Solflare / Torus):
+Stocklana-styled landing + strip UI at `http://127.0.0.1:5173` (`yarn web`).
 
-```bash
-# Terminal A — Surfpool
-./scripts/start-surfpool.sh
+- `/` — PT/YT overview + Meteora DBC→DAMM use case
+- `/app` — Split xStock → PT/YT, then **Launch YT on Meteora DBC** (graduates to DAMM v2)
 
-# Terminal B — deploy programs
-anchor build
-anchor deploy -p ca_registry --provider.cluster localnet
-anchor deploy -p divstrip --provider.cluster localnet
+Wallets: **Phantom or Solflare** (sign txs in-app). See
+[`REPRODUCE_SURFPOOL.md`](REPRODUCE_SURFPOOL.md) for RPC, funding, and registry seed steps.
 
-# Terminal C — site
-yarn web
-# or: cd web && npm install && npm run dev
-# → http://127.0.0.1:5173
-```
-
-Point the wallet RPC at `http://127.0.0.1:8899` (Phantom: developer settings /
-custom RPC). Landing explains the split; `/app` lists xStock / PT / YT and runs
-`wrap` when registry + strip market exist.
-
-### Meteora DBC → DAMM v2 (feat/damm-meteora)
-
-After wrap, **Launch YT on Meteora DBC** builds an equity-strip curve via
-`@meteora-ag/dynamic-bonding-curve-sdk`:
-
-- initial market cap ≈ f(fair coupon `1 − Yₛ/Yₜ`)
-- migration market cap ≈ 10× initial
-- `MigrationOption.MET_DAMM_V2`, quote = WSOL
-- pool address stored locally; link to https://migrator.meteora.ag
-
-```bash
-cd web && npm install && npm run dev
-```
-
-Requires Surfpool/mainnet-fork RPC so the DBC program
-`dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN` is reachable.
+Meteora curve: initial mcap ≈ f(fair coupon `1 − Yₛ/Yₜ`), migration ≈ 10×, quote WSOL.
+Requires Surfpool `--network mainnet` so DBC program
+`dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN` is on the fork.
 
 Kamino lending is **not** integrated. Jupiter program id remains in the arancio
 address book for a later swap path.

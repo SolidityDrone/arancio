@@ -28,6 +28,7 @@ expected_arguments=(
   --db
   "$isolated_database"
   --no-tui
+  --no-deploy
 )
 test "${#actual_arguments[@]}" -eq "${#expected_arguments[@]}"
 for index in "${!expected_arguments[@]}"; do
