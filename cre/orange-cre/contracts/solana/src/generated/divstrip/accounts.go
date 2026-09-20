@@ -16,6 +16,20 @@ func ParseAnyAccount(accountData []byte) (any, error) {
 		return nil, fmt.Errorf("failed to peek account discriminator: %w", err)
 	}
 	switch discriminator {
+	case Account_CurveWindowLaunch:
+		value := new(CurveWindowLaunch)
+		err := value.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal account as CurveWindowLaunch: %w", err)
+		}
+		return value, nil
+	case Account_CurveYtBridge:
+		value := new(CurveYtBridge)
+		err := value.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal account as CurveYtBridge: %w", err)
+		}
+		return value, nil
 	case Account_StripMarket:
 		value := new(StripMarket)
 		err := value.UnmarshalWithDecoder(decoder)
@@ -33,6 +47,48 @@ func ParseAnyAccount(accountData []byte) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown discriminator: %s", binary.FormatDiscriminator(discriminator))
 	}
+}
+
+func ParseAccount_CurveWindowLaunch(accountData []byte) (*CurveWindowLaunch, error) {
+	decoder := binary.NewBorshDecoder(accountData)
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return nil, fmt.Errorf("failed to peek discriminator: %w", err)
+	}
+	if discriminator != Account_CurveWindowLaunch {
+		return nil, fmt.Errorf("expected discriminator %v, got %s", Account_CurveWindowLaunch, binary.FormatDiscriminator(discriminator))
+	}
+	acc := new(CurveWindowLaunch)
+	err = acc.UnmarshalWithDecoder(decoder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal account of type CurveWindowLaunch: %w", err)
+	}
+	return acc, nil
+}
+
+func (c *Codec) DecodeCurveWindowLaunch(data []byte) (*CurveWindowLaunch, error) {
+	return ParseAccount_CurveWindowLaunch(data)
+}
+
+func ParseAccount_CurveYtBridge(accountData []byte) (*CurveYtBridge, error) {
+	decoder := binary.NewBorshDecoder(accountData)
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return nil, fmt.Errorf("failed to peek discriminator: %w", err)
+	}
+	if discriminator != Account_CurveYtBridge {
+		return nil, fmt.Errorf("expected discriminator %v, got %s", Account_CurveYtBridge, binary.FormatDiscriminator(discriminator))
+	}
+	acc := new(CurveYtBridge)
+	err = acc.UnmarshalWithDecoder(decoder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal account of type CurveYtBridge: %w", err)
+	}
+	return acc, nil
+}
+
+func (c *Codec) DecodeCurveYtBridge(data []byte) (*CurveYtBridge, error) {
+	return ParseAccount_CurveYtBridge(data)
 }
 
 func ParseAccount_StripMarket(accountData []byte) (*StripMarket, error) {

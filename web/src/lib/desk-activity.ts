@@ -5,6 +5,7 @@ const ACTIVITY_KEY = "divstrip.desk.activity.v1";
 
 export type DeskActivityKind =
   | "split"
+  | "pool_request"
   | "dbc_launch"
   | "dbc_swap"
   | "redeem_pt"
@@ -24,7 +25,7 @@ export type DeskActivity = {
   /** Human amount for splits / redeems / swaps */
   amount?: string;
   amountSymbol?: string;
-  /** Bonding-curve buy YT (SOL in) or sell YT (YT in). */
+  /** Bonding-curve buy YT (USDC in) or sell YT (YT in). */
   swapSide?: "buy" | "sell";
   pool?: string;
   baseMint?: string;
@@ -116,7 +117,7 @@ export function matchesActivityFilter(
     case "all":
       return true;
     case "bonding":
-      return kind === "dbc_launch" || kind === "dbc_swap";
+      return kind === "pool_request" || kind === "dbc_launch" || kind === "dbc_swap";
     case "split":
       return kind === "split";
     case "redemption":
@@ -145,14 +146,16 @@ export function activityKindLabel(kind: DeskActivityKind): string {
   switch (kind) {
     case "split":
       return "Split";
+    case "pool_request":
+      return "Pool request";
     case "dbc_launch":
-      return "DBC launch";
+      return "curve-YT launch";
     case "dbc_swap":
-      return "Curve swap";
+      return "curve-YT swap";
     case "redeem_pt":
-      return "Redeem PT";
+      return "strip PT redeem";
     case "redeem_yt":
-      return "Redeem YT";
+      return "strip YT redeem";
     case "unwrap":
       return "Unwrap";
     default:

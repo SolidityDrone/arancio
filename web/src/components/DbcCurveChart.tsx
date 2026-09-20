@@ -68,7 +68,7 @@ export function DbcCurveChart({
   return (
     <div className={`dbc-chart ${compact ? "dbc-chart-compact" : ""}`}>
       <div className="dbc-chart-head">
-        <span>Bonding curve (SOL mcap)</span>
+        <span>Bonding curve (USDC mcap)</span>
         <span className="mono dbc-chart-head-meta">
           {initialMcap.toLocaleString()} → {migrationMcap.toLocaleString()}
           {progressLabel ? (
@@ -140,7 +140,7 @@ export function DbcCurveChart({
           100%
         </text>
         <text x={4} y={pad.t + 4} className="dbc-axis">
-          {Math.round(maxY)} SOL
+          {Math.round(maxY)} USDC
         </text>
       </svg>
     </div>

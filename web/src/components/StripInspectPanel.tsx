@@ -14,6 +14,8 @@ import {
   type WindowPhase,
 } from "../lib/strip-math";
 import { couponFromCum, MULTIPLIER_SCALE } from "../lib/markets";
+import { CurveYtVaultPanel } from "./CurveYtVaultPanel";
+import { CURVE_YT_CALLOUT, curveYtWindowLabel } from "../lib/curve-yt-labels";
 
 export type LegHoldingRow = {
   startNonce: number;
@@ -36,7 +38,8 @@ type Props = {
   verifiedLaunch: StoredLaunch | null;
   poolProgress: { quoteProgress: number; isMigrated: boolean } | null;
   busy: boolean;
-  onLaunch: () => void;
+  onRequestPool?: () => void;
+  launchRegisteredOnChain?: boolean;
   onSelectInspect: (start: number, target: number) => void;
   inspectStart: number;
   inspectTarget: number;
@@ -76,7 +79,8 @@ export function StripInspectPanel({
   verifiedLaunch,
   poolProgress,
   busy,
-  onLaunch,
+  onRequestPool,
+  launchRegisteredOnChain = false,
   onSelectInspect,
   inspectStart,
   inspectTarget,
@@ -94,6 +98,7 @@ export function StripInspectPanel({
   const [cumStart, setCumStart] = useState<bigint>(MULTIPLIER_SCALE);
   const [cumTarget, setCumTarget] = useState<bigint>(MULTIPLIER_SCALE);
   const [cumLoading, setCumLoading] = useState(false);
+  const [vaultTick, setVaultTick] = useState(0);
 
   const phase = windowPhase(tipNonce, inspectStart, inspectTarget);
   const fairCoupon = fairCouponForWindow(inspectStart, inspectTarget);
@@ -380,8 +385,12 @@ export function StripInspectPanel({
   const marketBand = (
     <div className="desk-market-row" aria-labelledby="market-heading">
       <h3 id="market-heading" className="desk-market-title">
-        YT market · Meteora DBC
+        curve-YT market · Meteora DBC
       </h3>
+      <p className="hint desk-market-sub">
+        Trade <strong>curve-YT</strong> with USDC — separate from{" "}
+        <strong>strip YT</strong> in your wallet after a split.
+      </p>
       <div className="inspect-market-grid">
           <DbcCurveChart
             compact
@@ -399,31 +408,70 @@ export function StripInspectPanel({
                 rpcEndpoint={rpcEndpoint}
                 pool={verifiedLaunch.pool}
                 symbol={symbol}
-                startNonce={inspectStart}
-                targetNonce={inspectTarget}
+                startNonce={verifiedLaunch.startNonce}
+                targetNonce={verifiedLaunch.targetNonce}
+                underlyingMint={mint}
                 baseMint={verifiedLaunch.baseMint}
                 quoteMint={verifiedLaunch.quoteMint}
-                ytSymbol={`YT${symbol}`}
+                vaultRefreshKey={vaultTick}
                 onActivityLogged={onDeskActivity}
+                onVaultRefresh={() => setVaultTick((t) => t + 1)}
               />
             ) : (
               <div className="inspect-meteora-empty">
                 <p className="hint">
-                  No pool for n{inspectStart}→n{inspectTarget}. Split first,
-                  then launch YT discovery.
+                  No curve-YT pool for{" "}
+                  {curveYtWindowLabel(symbol, inspectStart, inspectTarget)}.
                 </p>
-                <button
-                  className="btn btn-primary btn-sm"
-                  disabled={busy}
-                  onClick={onLaunch}
-                  type="button"
-                >
-                  {busy ? "Initializing…" : "Launch Meteora DBC pool"}
-                </button>
+                <p className="hint curve-yt-empty-note">{CURVE_YT_CALLOUT}</p>
+                {launchRegisteredOnChain ? (
+                  <p className="hint">
+                    Pool registered on-chain — refresh or check Surfpool if the
+                    desk panel is empty.
+                  </p>
+                ) : null}
+                <div className="inspect-meteora-actions">
+                  {onRequestPool ? (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={busy}
+                      onClick={onRequestPool}
+                      type="button"
+                    >
+                      {busy ? "Launching…" : "Request curve-YT pool"}
+                    </button>
+                  ) : null}
+                  <p className="hint inspect-meteora-auth-hint">
+                    Backend → CRE HTTP trigger → Meteora DBC + on-chain
+                    registration. Requires launch-backend and CRE simulate
+                    --listen.
+                  </p>
+                </div>
               </div>
             )}
           </div>
         </div>
+      {verifiedLaunch ? (
+        <div className="desk-curve-vault-wrap">
+          <h4 className="desk-lifecycle-title">Exit strip YT → USDC</h4>
+          <CurveYtVaultPanel
+            connection={connection}
+            rpcEndpoint={rpcEndpoint}
+            pool={verifiedLaunch.pool}
+            curveYtMint={verifiedLaunch.baseMint}
+            symbol={symbol}
+            startNonce={verifiedLaunch.startNonce}
+            targetNonce={verifiedLaunch.targetNonce}
+            underlyingMint={mint}
+            stripYtRaw={activeRow?.ytRaw ?? 0n}
+            fairCoupon={fairCoupon}
+            launchFairCoupon={verifiedLaunch.fairCoupon}
+                vaultRefreshKey={vaultTick}
+                onVaultRefresh={() => setVaultTick((t) => t + 1)}
+            onActivityLogged={onDeskActivity}
+          />
+        </div>
+      ) : null}
     </div>
   );
 

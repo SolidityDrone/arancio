@@ -12,7 +12,7 @@ import (
 )
 
 // Builds a "create_series" instruction.
-// Create PT/YT mints for window `[start_nonce, target_nonce]`.
+// Create PT/YT mints for window `[start_nonce, target_nonce]`. // `start_nonce` may be the tip or a future tip (`>= current_yield_nonce`) so // desks can open forward strips (e.g. tip=4 → window 6→7).
 func NewCreateSeriesInstruction(
 	// Params:
 	startNonceParam uint32,
@@ -67,6 +67,155 @@ func NewCreateSeriesInstruction(
 		// Account 6 "token_program": Read-only, Non-signer, Required
 		accounts__.Append(solanago.NewAccountMeta(tokenProgramAccount, false, false))
 		// Account 7 "system_program": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(systemProgramAccount, false, false))
+	}
+
+	// Create the instruction.
+	return solanago.NewInstruction(
+		ProgramID,
+		accounts__,
+		buf__.Bytes(),
+	), nil
+}
+
+// Builds a "deposit_curve_yt_for_shares" instruction.
+// Deposit curve-YT into vault; mint liquid-curve-YT 1:1 (after Meteora buy in same tx).
+func NewDepositCurveYtForSharesInstruction(
+	// Params:
+	curveAmountParam uint64,
+
+	// Accounts:
+	userAccount solanago.PublicKey,
+	marketAccount solanago.PublicKey,
+	seriesAccount solanago.PublicKey,
+	bridgeAccount solanago.PublicKey,
+	bridgeAuthorityAccount solanago.PublicKey,
+	curveYtMintAccount solanago.PublicKey,
+	lcYtMintAccount solanago.PublicKey,
+	userCurveYtAccount solanago.PublicKey,
+	userLcYtAccount solanago.PublicKey,
+	vaultCurveYtAccount solanago.PublicKey,
+	tokenProgramAccount solanago.PublicKey,
+) (solanago.Instruction, error) {
+	buf__ := new(bytes.Buffer)
+	enc__ := binary.NewBorshEncoder(buf__)
+
+	// Encode the instruction discriminator.
+	err := enc__.WriteBytes(Instruction_DepositCurveYtForShares[:], false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write instruction discriminator: %w", err)
+	}
+	{
+		// Serialize `curveAmountParam`:
+		err = enc__.Encode(curveAmountParam)
+		if err != nil {
+			return nil, errors.NewField("curveAmountParam", err)
+		}
+	}
+	accounts__ := solanago.AccountMetaSlice{}
+
+	// Add the accounts to the instruction.
+	{
+		// Account 0 "user": Read-only, Signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userAccount, false, true))
+		// Account 1 "market": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(marketAccount, false, false))
+		// Account 2 "series": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(seriesAccount, false, false))
+		// Account 3 "bridge": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAccount, false, false))
+		// Account 4 "bridge_authority": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAuthorityAccount, false, false))
+		// Account 5 "curve_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(curveYtMintAccount, true, false))
+		// Account 6 "lc_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(lcYtMintAccount, true, false))
+		// Account 7 "user_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userCurveYtAccount, true, false))
+		// Account 8 "user_lc_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userLcYtAccount, true, false))
+		// Account 9 "vault_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(vaultCurveYtAccount, true, false))
+		// Account 10 "token_program": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(tokenProgramAccount, false, false))
+	}
+
+	// Create the instruction.
+	return solanago.NewInstruction(
+		ProgramID,
+		accounts__,
+		buf__.Bytes(),
+	), nil
+}
+
+// Builds a "init_curve_bridge" instruction.
+// Link strip series to Meteora curve-YT mint and create curve-YT vault ATAs.
+func NewInitCurveBridgeInstruction(
+	// Params:
+	curveMintParam solanago.PublicKey,
+
+	// Accounts:
+	payerAccount solanago.PublicKey,
+	marketAccount solanago.PublicKey,
+	seriesAccount solanago.PublicKey,
+	launchAccount solanago.PublicKey,
+	bridgeAccount solanago.PublicKey,
+	bridgeAuthorityAccount solanago.PublicKey,
+	vaultStripYtAccount solanago.PublicKey,
+	vaultCurveYtAccount solanago.PublicKey,
+	lcYtMintAccount solanago.PublicKey,
+	stripYtMintAccount solanago.PublicKey,
+	curveYtMintAccount solanago.PublicKey,
+	tokenProgramAccount solanago.PublicKey,
+	associatedTokenProgramAccount solanago.PublicKey,
+	systemProgramAccount solanago.PublicKey,
+) (solanago.Instruction, error) {
+	buf__ := new(bytes.Buffer)
+	enc__ := binary.NewBorshEncoder(buf__)
+
+	// Encode the instruction discriminator.
+	err := enc__.WriteBytes(Instruction_InitCurveBridge[:], false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write instruction discriminator: %w", err)
+	}
+	{
+		// Serialize `curveMintParam`:
+		err = enc__.Encode(curveMintParam)
+		if err != nil {
+			return nil, errors.NewField("curveMintParam", err)
+		}
+	}
+	accounts__ := solanago.AccountMetaSlice{}
+
+	// Add the accounts to the instruction.
+	{
+		// Account 0 "payer": Writable, Signer, Required
+		accounts__.Append(solanago.NewAccountMeta(payerAccount, true, true))
+		// Account 1 "market": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(marketAccount, false, false))
+		// Account 2 "series": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(seriesAccount, false, false))
+		// Account 3 "launch": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(launchAccount, false, false))
+		// Account 4 "bridge": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAccount, true, false))
+		// Account 5 "bridge_authority": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAuthorityAccount, false, false))
+		// Account 6 "vault_strip_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(vaultStripYtAccount, true, false))
+		// Account 7 "vault_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(vaultCurveYtAccount, true, false))
+		// Account 8 "lc_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(lcYtMintAccount, true, false))
+		// Account 9 "strip_yt_mint": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(stripYtMintAccount, false, false))
+		// Account 10 "curve_yt_mint": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(curveYtMintAccount, false, false))
+		// Account 11 "token_program": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(tokenProgramAccount, false, false))
+		// Account 12 "associated_token_program": Read-only, Non-signer, Required, Address: ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL
+		accounts__.Append(solanago.NewAccountMeta(associatedTokenProgramAccount, false, false))
+		// Account 13 "system_program": Read-only, Non-signer, Required
 		accounts__.Append(solanago.NewAccountMeta(systemProgramAccount, false, false))
 	}
 
@@ -139,7 +288,7 @@ func NewInitializeStripInstruction(
 }
 
 // Builds a "on_report" instruction.
-// CRE path (Option A): after a Yield CA is written to ca_registry, the same // workflow WriteReports here. We emit `YtLaunchRequested` for window // `[current_yield_nonce, current + lock_nonces]` so a desk/crank can create // the Meteora DBC→DAMM pool (DBC create needs keypair signers CRE cannot supply).
+// CRE path (optional / unused by xstocks-ca-sync): emit `YtLaunchRequested` // for `[current_yield_nonce, current + lock_nonces]`. Desk initializes // Meteora DBC→DAMM directly; this receiver is kept for optional cranks.
 func NewOnReportInstruction(
 	// Params:
 	metadataParam []byte,
@@ -265,6 +414,76 @@ func NewRedeemCapitalInstruction(
 	), nil
 }
 
+// Builds a "redeem_shares_for_curve_yt" instruction.
+// Burn liquid-curve-YT; withdraw curve-YT 1:1 from vault (before Meteora sell in same tx).
+func NewRedeemSharesForCurveYtInstruction(
+	// Params:
+	curveAmountParam uint64,
+
+	// Accounts:
+	userAccount solanago.PublicKey,
+	marketAccount solanago.PublicKey,
+	seriesAccount solanago.PublicKey,
+	bridgeAccount solanago.PublicKey,
+	bridgeAuthorityAccount solanago.PublicKey,
+	curveYtMintAccount solanago.PublicKey,
+	lcYtMintAccount solanago.PublicKey,
+	userCurveYtAccount solanago.PublicKey,
+	userLcYtAccount solanago.PublicKey,
+	vaultCurveYtAccount solanago.PublicKey,
+	tokenProgramAccount solanago.PublicKey,
+) (solanago.Instruction, error) {
+	buf__ := new(bytes.Buffer)
+	enc__ := binary.NewBorshEncoder(buf__)
+
+	// Encode the instruction discriminator.
+	err := enc__.WriteBytes(Instruction_RedeemSharesForCurveYt[:], false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write instruction discriminator: %w", err)
+	}
+	{
+		// Serialize `curveAmountParam`:
+		err = enc__.Encode(curveAmountParam)
+		if err != nil {
+			return nil, errors.NewField("curveAmountParam", err)
+		}
+	}
+	accounts__ := solanago.AccountMetaSlice{}
+
+	// Add the accounts to the instruction.
+	{
+		// Account 0 "user": Read-only, Signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userAccount, false, true))
+		// Account 1 "market": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(marketAccount, false, false))
+		// Account 2 "series": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(seriesAccount, false, false))
+		// Account 3 "bridge": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAccount, false, false))
+		// Account 4 "bridge_authority": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAuthorityAccount, false, false))
+		// Account 5 "curve_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(curveYtMintAccount, true, false))
+		// Account 6 "lc_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(lcYtMintAccount, true, false))
+		// Account 7 "user_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userCurveYtAccount, true, false))
+		// Account 8 "user_lc_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userLcYtAccount, true, false))
+		// Account 9 "vault_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(vaultCurveYtAccount, true, false))
+		// Account 10 "token_program": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(tokenProgramAccount, false, false))
+	}
+
+	// Create the instruction.
+	return solanago.NewInstruction(
+		ProgramID,
+		accounts__,
+		buf__.Bytes(),
+	), nil
+}
+
 // Builds a "redeem_yield" instruction.
 func NewRedeemYieldInstruction(
 	// Params:
@@ -327,6 +546,304 @@ func NewRedeemYieldInstruction(
 		accounts__.Append(solanago.NewAccountMeta(tokenProgramAccount, false, false))
 		// Account 11 "leg_token_program": Read-only, Non-signer, Required
 		accounts__.Append(solanago.NewAccountMeta(legTokenProgramAccount, false, false))
+	}
+
+	// Create the instruction.
+	return solanago.NewInstruction(
+		ProgramID,
+		accounts__,
+		buf__.Bytes(),
+	), nil
+}
+
+// Builds a "register_curve_launch" instruction.
+// Market authority registers the canonical Meteora pool after policy launch.
+func NewRegisterCurveLaunchInstruction(
+	// Params:
+	curveYtMintParam solanago.PublicKey,
+	poolParam solanago.PublicKey,
+	launchFairPpmParam uint32,
+	initialMcapUsdParam uint64,
+	migrationMcapUsdParam uint64,
+
+	// Accounts:
+	registrarAccount solanago.PublicKey,
+	marketAccount solanago.PublicKey,
+	seriesAccount solanago.PublicKey,
+	launchAccount solanago.PublicKey,
+	systemProgramAccount solanago.PublicKey,
+) (solanago.Instruction, error) {
+	buf__ := new(bytes.Buffer)
+	enc__ := binary.NewBorshEncoder(buf__)
+
+	// Encode the instruction discriminator.
+	err := enc__.WriteBytes(Instruction_RegisterCurveLaunch[:], false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write instruction discriminator: %w", err)
+	}
+	{
+		// Serialize `curveYtMintParam`:
+		err = enc__.Encode(curveYtMintParam)
+		if err != nil {
+			return nil, errors.NewField("curveYtMintParam", err)
+		}
+		// Serialize `poolParam`:
+		err = enc__.Encode(poolParam)
+		if err != nil {
+			return nil, errors.NewField("poolParam", err)
+		}
+		// Serialize `launchFairPpmParam`:
+		err = enc__.Encode(launchFairPpmParam)
+		if err != nil {
+			return nil, errors.NewField("launchFairPpmParam", err)
+		}
+		// Serialize `initialMcapUsdParam`:
+		err = enc__.Encode(initialMcapUsdParam)
+		if err != nil {
+			return nil, errors.NewField("initialMcapUsdParam", err)
+		}
+		// Serialize `migrationMcapUsdParam`:
+		err = enc__.Encode(migrationMcapUsdParam)
+		if err != nil {
+			return nil, errors.NewField("migrationMcapUsdParam", err)
+		}
+	}
+	accounts__ := solanago.AccountMetaSlice{}
+
+	// Add the accounts to the instruction.
+	{
+		// Account 0 "registrar": Writable, Signer, Required
+		accounts__.Append(solanago.NewAccountMeta(registrarAccount, true, true))
+		// Account 1 "market": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(marketAccount, false, false))
+		// Account 2 "series": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(seriesAccount, false, false))
+		// Account 3 "launch": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(launchAccount, true, false))
+		// Account 4 "system_program": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(systemProgramAccount, false, false))
+	}
+
+	// Create the instruction.
+	return solanago.NewInstruction(
+		ProgramID,
+		accounts__,
+		buf__.Bytes(),
+	), nil
+}
+
+// Builds a "request_curve_launch" instruction.
+// Permissionless: request canonical curve-YT pool deployment for a strip window. // Emits `YtLaunchRequested` for CRE log-trigger / launcher workflows.
+func NewRequestCurveLaunchInstruction(
+	// Params:
+	startNonceParam uint32,
+	targetNonceParam uint32,
+
+	// Accounts:
+	payerAccount solanago.PublicKey,
+	marketAccount solanago.PublicKey,
+	registryAccount solanago.PublicKey,
+) (solanago.Instruction, error) {
+	buf__ := new(bytes.Buffer)
+	enc__ := binary.NewBorshEncoder(buf__)
+
+	// Encode the instruction discriminator.
+	err := enc__.WriteBytes(Instruction_RequestCurveLaunch[:], false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write instruction discriminator: %w", err)
+	}
+	{
+		// Serialize `startNonceParam`:
+		err = enc__.Encode(startNonceParam)
+		if err != nil {
+			return nil, errors.NewField("startNonceParam", err)
+		}
+		// Serialize `targetNonceParam`:
+		err = enc__.Encode(targetNonceParam)
+		if err != nil {
+			return nil, errors.NewField("targetNonceParam", err)
+		}
+	}
+	accounts__ := solanago.AccountMetaSlice{}
+
+	// Add the accounts to the instruction.
+	{
+		// Account 0 "payer": Read-only, Signer, Required
+		accounts__.Append(solanago.NewAccountMeta(payerAccount, false, true))
+		// Account 1 "market": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(marketAccount, false, false))
+		// Account 2 "registry": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(registryAccount, false, false))
+	}
+
+	// Create the instruction.
+	return solanago.NewInstruction(
+		ProgramID,
+		accounts__,
+		buf__.Bytes(),
+	), nil
+}
+
+// Builds a "swap_curve_yt_for_strip_yt" instruction.
+// Deposit curve-YT; receive strip YT (`strip_amount >= min_strip_out`).
+func NewSwapCurveYtForStripYtInstruction(
+	// Params:
+	curveAmountParam uint64,
+	stripAmountParam uint64,
+	minStripOutParam uint64,
+
+	// Accounts:
+	userAccount solanago.PublicKey,
+	marketAccount solanago.PublicKey,
+	seriesAccount solanago.PublicKey,
+	bridgeAccount solanago.PublicKey,
+	bridgeAuthorityAccount solanago.PublicKey,
+	stripYtMintAccount solanago.PublicKey,
+	curveYtMintAccount solanago.PublicKey,
+	userStripYtAccount solanago.PublicKey,
+	userCurveYtAccount solanago.PublicKey,
+	vaultStripYtAccount solanago.PublicKey,
+	vaultCurveYtAccount solanago.PublicKey,
+	tokenProgramAccount solanago.PublicKey,
+) (solanago.Instruction, error) {
+	buf__ := new(bytes.Buffer)
+	enc__ := binary.NewBorshEncoder(buf__)
+
+	// Encode the instruction discriminator.
+	err := enc__.WriteBytes(Instruction_SwapCurveYtForStripYt[:], false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write instruction discriminator: %w", err)
+	}
+	{
+		// Serialize `curveAmountParam`:
+		err = enc__.Encode(curveAmountParam)
+		if err != nil {
+			return nil, errors.NewField("curveAmountParam", err)
+		}
+		// Serialize `stripAmountParam`:
+		err = enc__.Encode(stripAmountParam)
+		if err != nil {
+			return nil, errors.NewField("stripAmountParam", err)
+		}
+		// Serialize `minStripOutParam`:
+		err = enc__.Encode(minStripOutParam)
+		if err != nil {
+			return nil, errors.NewField("minStripOutParam", err)
+		}
+	}
+	accounts__ := solanago.AccountMetaSlice{}
+
+	// Add the accounts to the instruction.
+	{
+		// Account 0 "user": Read-only, Signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userAccount, false, true))
+		// Account 1 "market": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(marketAccount, false, false))
+		// Account 2 "series": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(seriesAccount, false, false))
+		// Account 3 "bridge": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAccount, false, false))
+		// Account 4 "bridge_authority": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAuthorityAccount, false, false))
+		// Account 5 "strip_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(stripYtMintAccount, true, false))
+		// Account 6 "curve_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(curveYtMintAccount, true, false))
+		// Account 7 "user_strip_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userStripYtAccount, true, false))
+		// Account 8 "user_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userCurveYtAccount, true, false))
+		// Account 9 "vault_strip_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(vaultStripYtAccount, true, false))
+		// Account 10 "vault_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(vaultCurveYtAccount, true, false))
+		// Account 11 "token_program": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(tokenProgramAccount, false, false))
+	}
+
+	// Create the instruction.
+	return solanago.NewInstruction(
+		ProgramID,
+		accounts__,
+		buf__.Bytes(),
+	), nil
+}
+
+// Builds a "swap_strip_yt_for_curve_yt" instruction.
+// Deposit strip YT; receive curve-YT at client-quoted DAMM spot (`curve_amount >= min_curve_out`).
+func NewSwapStripYtForCurveYtInstruction(
+	// Params:
+	stripAmountParam uint64,
+	curveAmountParam uint64,
+	minCurveOutParam uint64,
+
+	// Accounts:
+	userAccount solanago.PublicKey,
+	marketAccount solanago.PublicKey,
+	seriesAccount solanago.PublicKey,
+	bridgeAccount solanago.PublicKey,
+	bridgeAuthorityAccount solanago.PublicKey,
+	stripYtMintAccount solanago.PublicKey,
+	curveYtMintAccount solanago.PublicKey,
+	userStripYtAccount solanago.PublicKey,
+	userCurveYtAccount solanago.PublicKey,
+	vaultStripYtAccount solanago.PublicKey,
+	vaultCurveYtAccount solanago.PublicKey,
+	tokenProgramAccount solanago.PublicKey,
+) (solanago.Instruction, error) {
+	buf__ := new(bytes.Buffer)
+	enc__ := binary.NewBorshEncoder(buf__)
+
+	// Encode the instruction discriminator.
+	err := enc__.WriteBytes(Instruction_SwapStripYtForCurveYt[:], false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write instruction discriminator: %w", err)
+	}
+	{
+		// Serialize `stripAmountParam`:
+		err = enc__.Encode(stripAmountParam)
+		if err != nil {
+			return nil, errors.NewField("stripAmountParam", err)
+		}
+		// Serialize `curveAmountParam`:
+		err = enc__.Encode(curveAmountParam)
+		if err != nil {
+			return nil, errors.NewField("curveAmountParam", err)
+		}
+		// Serialize `minCurveOutParam`:
+		err = enc__.Encode(minCurveOutParam)
+		if err != nil {
+			return nil, errors.NewField("minCurveOutParam", err)
+		}
+	}
+	accounts__ := solanago.AccountMetaSlice{}
+
+	// Add the accounts to the instruction.
+	{
+		// Account 0 "user": Read-only, Signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userAccount, false, true))
+		// Account 1 "market": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(marketAccount, false, false))
+		// Account 2 "series": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(seriesAccount, false, false))
+		// Account 3 "bridge": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAccount, false, false))
+		// Account 4 "bridge_authority": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(bridgeAuthorityAccount, false, false))
+		// Account 5 "strip_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(stripYtMintAccount, true, false))
+		// Account 6 "curve_yt_mint": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(curveYtMintAccount, true, false))
+		// Account 7 "user_strip_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userStripYtAccount, true, false))
+		// Account 8 "user_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(userCurveYtAccount, true, false))
+		// Account 9 "vault_strip_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(vaultStripYtAccount, true, false))
+		// Account 10 "vault_curve_yt": Writable, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(vaultCurveYtAccount, true, false))
+		// Account 11 "token_program": Read-only, Non-signer, Required
+		accounts__.Append(solanago.NewAccountMeta(tokenProgramAccount, false, false))
 	}
 
 	// Create the instruction.
@@ -417,7 +934,7 @@ func NewUnwrapInstruction(
 }
 
 // Builds a "wrap" instruction.
-// Escrow underlying and mint PT + YT 1:1 for the series window.
+// Escrow underlying and mint PT + YT 1:1 for the series window. // Allowed while tip is still at or before the series start (spot or forward).
 func NewWrapInstruction(
 	// Params:
 	amountParam uint64,
@@ -700,6 +1217,539 @@ func (obj *CreateSeriesInstruction) Unmarshal(buf []byte) error {
 // UnmarshalCreateSeriesInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
 func UnmarshalCreateSeriesInstruction(buf []byte) (*CreateSeriesInstruction, error) {
 	obj := new(CreateSeriesInstruction)
+	var err error
+	err = obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+type DepositCurveYtForSharesInstruction struct {
+	CurveAmount uint64 `json:"curve_amount"`
+
+	// Accounts:
+	User                 solanago.PublicKey `json:"user"`
+	UserSigner           bool               `json:"user_signer"`
+	Market               solanago.PublicKey `json:"market"`
+	Series               solanago.PublicKey `json:"series"`
+	Bridge               solanago.PublicKey `json:"bridge"`
+	BridgeAuthority      solanago.PublicKey `json:"bridge_authority"`
+	CurveYtMint          solanago.PublicKey `json:"curve_yt_mint"`
+	CurveYtMintWritable  bool               `json:"curve_yt_mint_writable"`
+	LcYtMint             solanago.PublicKey `json:"lc_yt_mint"`
+	LcYtMintWritable     bool               `json:"lc_yt_mint_writable"`
+	UserCurveYt          solanago.PublicKey `json:"user_curve_yt"`
+	UserCurveYtWritable  bool               `json:"user_curve_yt_writable"`
+	UserLcYt             solanago.PublicKey `json:"user_lc_yt"`
+	UserLcYtWritable     bool               `json:"user_lc_yt_writable"`
+	VaultCurveYt         solanago.PublicKey `json:"vault_curve_yt"`
+	VaultCurveYtWritable bool               `json:"vault_curve_yt_writable"`
+	TokenProgram         solanago.PublicKey `json:"token_program"`
+}
+
+func (obj *DepositCurveYtForSharesInstruction) GetDiscriminator() []byte {
+	return Instruction_DepositCurveYtForShares[:]
+}
+
+// UnmarshalWithDecoder unmarshals the DepositCurveYtForSharesInstruction from Borsh-encoded bytes prefixed with its discriminator.
+func (obj *DepositCurveYtForSharesInstruction) UnmarshalWithDecoder(decoder *binary.Decoder) error {
+	var err error
+	// Read the discriminator and check it against the expected value:
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return fmt.Errorf("failed to read instruction discriminator for %s: %w", "DepositCurveYtForSharesInstruction", err)
+	}
+	if discriminator != Instruction_DepositCurveYtForShares {
+		return fmt.Errorf("instruction discriminator mismatch for %s: expected %s, got %s", "DepositCurveYtForSharesInstruction", Instruction_DepositCurveYtForShares, discriminator)
+	}
+	// Deserialize `CurveAmount`:
+	err = decoder.Decode(&obj.CurveAmount)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *DepositCurveYtForSharesInstruction) UnmarshalAccountIndices(buf []byte) ([]uint8, error) {
+	// UnmarshalAccountIndices decodes account indices from Borsh-encoded bytes
+	decoder := binary.NewBorshDecoder(buf)
+	indices := make([]uint8, 0)
+	index := uint8(0)
+	var err error
+	// Decode from user account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user", err)
+	}
+	indices = append(indices, index)
+	// Decode from market account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "market", err)
+	}
+	indices = append(indices, index)
+	// Decode from series account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "series", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge_authority account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge_authority", err)
+	}
+	indices = append(indices, index)
+	// Decode from curve_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "curve_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from lc_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "lc_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from user_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from user_lc_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user_lc_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from vault_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "vault_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from token_program account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "token_program", err)
+	}
+	indices = append(indices, index)
+	return indices, nil
+}
+
+func (obj *DepositCurveYtForSharesInstruction) PopulateFromAccountIndices(indices []uint8, accountKeys []solanago.PublicKey) error {
+	// PopulateFromAccountIndices sets account public keys from indices and account keys array
+	if len(indices) != 11 {
+		return fmt.Errorf("mismatch between expected accounts (%d) and provided indices (%d)", 11, len(indices))
+	}
+	indexOffset := 0
+	// Set user account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user", len(accountKeys)-1)
+	}
+	obj.User = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set market account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "market", len(accountKeys)-1)
+	}
+	obj.Market = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set series account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "series", len(accountKeys)-1)
+	}
+	obj.Series = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge", len(accountKeys)-1)
+	}
+	obj.Bridge = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge_authority account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge_authority", len(accountKeys)-1)
+	}
+	obj.BridgeAuthority = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set curve_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "curve_yt_mint", len(accountKeys)-1)
+	}
+	obj.CurveYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set lc_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "lc_yt_mint", len(accountKeys)-1)
+	}
+	obj.LcYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set user_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user_curve_yt", len(accountKeys)-1)
+	}
+	obj.UserCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set user_lc_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user_lc_yt", len(accountKeys)-1)
+	}
+	obj.UserLcYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set vault_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "vault_curve_yt", len(accountKeys)-1)
+	}
+	obj.VaultCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set token_program account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "token_program", len(accountKeys)-1)
+	}
+	obj.TokenProgram = accountKeys[indices[indexOffset]]
+	indexOffset++
+	return nil
+}
+
+func (obj *DepositCurveYtForSharesInstruction) GetAccountKeys() []solanago.PublicKey {
+	keys := make([]solanago.PublicKey, 0)
+	keys = append(keys, obj.User)
+	keys = append(keys, obj.Market)
+	keys = append(keys, obj.Series)
+	keys = append(keys, obj.Bridge)
+	keys = append(keys, obj.BridgeAuthority)
+	keys = append(keys, obj.CurveYtMint)
+	keys = append(keys, obj.LcYtMint)
+	keys = append(keys, obj.UserCurveYt)
+	keys = append(keys, obj.UserLcYt)
+	keys = append(keys, obj.VaultCurveYt)
+	keys = append(keys, obj.TokenProgram)
+	return keys
+}
+
+// Unmarshal unmarshals the DepositCurveYtForSharesInstruction from Borsh-encoded bytes prefixed with the discriminator.
+func (obj *DepositCurveYtForSharesInstruction) Unmarshal(buf []byte) error {
+	var err error
+	err = obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling DepositCurveYtForSharesInstruction: %w", err)
+	}
+	return nil
+}
+
+// UnmarshalDepositCurveYtForSharesInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
+func UnmarshalDepositCurveYtForSharesInstruction(buf []byte) (*DepositCurveYtForSharesInstruction, error) {
+	obj := new(DepositCurveYtForSharesInstruction)
+	var err error
+	err = obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+type InitCurveBridgeInstruction struct {
+	CurveMint solanago.PublicKey `json:"curve_mint"`
+
+	// Accounts:
+	Payer                  solanago.PublicKey `json:"payer"`
+	PayerWritable          bool               `json:"payer_writable"`
+	PayerSigner            bool               `json:"payer_signer"`
+	Market                 solanago.PublicKey `json:"market"`
+	Series                 solanago.PublicKey `json:"series"`
+	Launch                 solanago.PublicKey `json:"launch"`
+	Bridge                 solanago.PublicKey `json:"bridge"`
+	BridgeWritable         bool               `json:"bridge_writable"`
+	BridgeAuthority        solanago.PublicKey `json:"bridge_authority"`
+	VaultStripYt           solanago.PublicKey `json:"vault_strip_yt"`
+	VaultStripYtWritable   bool               `json:"vault_strip_yt_writable"`
+	VaultCurveYt           solanago.PublicKey `json:"vault_curve_yt"`
+	VaultCurveYtWritable   bool               `json:"vault_curve_yt_writable"`
+	LcYtMint               solanago.PublicKey `json:"lc_yt_mint"`
+	LcYtMintWritable       bool               `json:"lc_yt_mint_writable"`
+	StripYtMint            solanago.PublicKey `json:"strip_yt_mint"`
+	CurveYtMint            solanago.PublicKey `json:"curve_yt_mint"`
+	TokenProgram           solanago.PublicKey `json:"token_program"`
+	AssociatedTokenProgram solanago.PublicKey `json:"associated_token_program"`
+	SystemProgram          solanago.PublicKey `json:"system_program"`
+}
+
+func (obj *InitCurveBridgeInstruction) GetDiscriminator() []byte {
+	return Instruction_InitCurveBridge[:]
+}
+
+// UnmarshalWithDecoder unmarshals the InitCurveBridgeInstruction from Borsh-encoded bytes prefixed with its discriminator.
+func (obj *InitCurveBridgeInstruction) UnmarshalWithDecoder(decoder *binary.Decoder) error {
+	var err error
+	// Read the discriminator and check it against the expected value:
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return fmt.Errorf("failed to read instruction discriminator for %s: %w", "InitCurveBridgeInstruction", err)
+	}
+	if discriminator != Instruction_InitCurveBridge {
+		return fmt.Errorf("instruction discriminator mismatch for %s: expected %s, got %s", "InitCurveBridgeInstruction", Instruction_InitCurveBridge, discriminator)
+	}
+	// Deserialize `CurveMint`:
+	err = decoder.Decode(&obj.CurveMint)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *InitCurveBridgeInstruction) UnmarshalAccountIndices(buf []byte) ([]uint8, error) {
+	// UnmarshalAccountIndices decodes account indices from Borsh-encoded bytes
+	decoder := binary.NewBorshDecoder(buf)
+	indices := make([]uint8, 0)
+	index := uint8(0)
+	var err error
+	// Decode from payer account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "payer", err)
+	}
+	indices = append(indices, index)
+	// Decode from market account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "market", err)
+	}
+	indices = append(indices, index)
+	// Decode from series account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "series", err)
+	}
+	indices = append(indices, index)
+	// Decode from launch account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "launch", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge_authority account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge_authority", err)
+	}
+	indices = append(indices, index)
+	// Decode from vault_strip_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "vault_strip_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from vault_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "vault_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from lc_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "lc_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from strip_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "strip_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from curve_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "curve_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from token_program account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "token_program", err)
+	}
+	indices = append(indices, index)
+	// Decode from associated_token_program account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "associated_token_program", err)
+	}
+	indices = append(indices, index)
+	// Decode from system_program account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "system_program", err)
+	}
+	indices = append(indices, index)
+	return indices, nil
+}
+
+func (obj *InitCurveBridgeInstruction) PopulateFromAccountIndices(indices []uint8, accountKeys []solanago.PublicKey) error {
+	// PopulateFromAccountIndices sets account public keys from indices and account keys array
+	if len(indices) != 14 {
+		return fmt.Errorf("mismatch between expected accounts (%d) and provided indices (%d)", 14, len(indices))
+	}
+	indexOffset := 0
+	// Set payer account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "payer", len(accountKeys)-1)
+	}
+	obj.Payer = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set market account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "market", len(accountKeys)-1)
+	}
+	obj.Market = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set series account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "series", len(accountKeys)-1)
+	}
+	obj.Series = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set launch account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "launch", len(accountKeys)-1)
+	}
+	obj.Launch = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge", len(accountKeys)-1)
+	}
+	obj.Bridge = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge_authority account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge_authority", len(accountKeys)-1)
+	}
+	obj.BridgeAuthority = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set vault_strip_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "vault_strip_yt", len(accountKeys)-1)
+	}
+	obj.VaultStripYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set vault_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "vault_curve_yt", len(accountKeys)-1)
+	}
+	obj.VaultCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set lc_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "lc_yt_mint", len(accountKeys)-1)
+	}
+	obj.LcYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set strip_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "strip_yt_mint", len(accountKeys)-1)
+	}
+	obj.StripYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set curve_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "curve_yt_mint", len(accountKeys)-1)
+	}
+	obj.CurveYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set token_program account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "token_program", len(accountKeys)-1)
+	}
+	obj.TokenProgram = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set associated_token_program account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "associated_token_program", len(accountKeys)-1)
+	}
+	obj.AssociatedTokenProgram = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set system_program account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "system_program", len(accountKeys)-1)
+	}
+	obj.SystemProgram = accountKeys[indices[indexOffset]]
+	indexOffset++
+	return nil
+}
+
+func (obj *InitCurveBridgeInstruction) GetAccountKeys() []solanago.PublicKey {
+	keys := make([]solanago.PublicKey, 0)
+	keys = append(keys, obj.Payer)
+	keys = append(keys, obj.Market)
+	keys = append(keys, obj.Series)
+	keys = append(keys, obj.Launch)
+	keys = append(keys, obj.Bridge)
+	keys = append(keys, obj.BridgeAuthority)
+	keys = append(keys, obj.VaultStripYt)
+	keys = append(keys, obj.VaultCurveYt)
+	keys = append(keys, obj.LcYtMint)
+	keys = append(keys, obj.StripYtMint)
+	keys = append(keys, obj.CurveYtMint)
+	keys = append(keys, obj.TokenProgram)
+	keys = append(keys, obj.AssociatedTokenProgram)
+	keys = append(keys, obj.SystemProgram)
+	return keys
+}
+
+// Unmarshal unmarshals the InitCurveBridgeInstruction from Borsh-encoded bytes prefixed with the discriminator.
+func (obj *InitCurveBridgeInstruction) Unmarshal(buf []byte) error {
+	var err error
+	err = obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling InitCurveBridgeInstruction: %w", err)
+	}
+	return nil
+}
+
+// UnmarshalInitCurveBridgeInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
+func UnmarshalInitCurveBridgeInstruction(buf []byte) (*InitCurveBridgeInstruction, error) {
+	obj := new(InitCurveBridgeInstruction)
 	var err error
 	err = obj.Unmarshal(buf)
 	if err != nil {
@@ -1278,6 +2328,250 @@ func UnmarshalRedeemCapitalInstruction(buf []byte) (*RedeemCapitalInstruction, e
 	return obj, nil
 }
 
+type RedeemSharesForCurveYtInstruction struct {
+	CurveAmount uint64 `json:"curve_amount"`
+
+	// Accounts:
+	User                 solanago.PublicKey `json:"user"`
+	UserSigner           bool               `json:"user_signer"`
+	Market               solanago.PublicKey `json:"market"`
+	Series               solanago.PublicKey `json:"series"`
+	Bridge               solanago.PublicKey `json:"bridge"`
+	BridgeAuthority      solanago.PublicKey `json:"bridge_authority"`
+	CurveYtMint          solanago.PublicKey `json:"curve_yt_mint"`
+	CurveYtMintWritable  bool               `json:"curve_yt_mint_writable"`
+	LcYtMint             solanago.PublicKey `json:"lc_yt_mint"`
+	LcYtMintWritable     bool               `json:"lc_yt_mint_writable"`
+	UserCurveYt          solanago.PublicKey `json:"user_curve_yt"`
+	UserCurveYtWritable  bool               `json:"user_curve_yt_writable"`
+	UserLcYt             solanago.PublicKey `json:"user_lc_yt"`
+	UserLcYtWritable     bool               `json:"user_lc_yt_writable"`
+	VaultCurveYt         solanago.PublicKey `json:"vault_curve_yt"`
+	VaultCurveYtWritable bool               `json:"vault_curve_yt_writable"`
+	TokenProgram         solanago.PublicKey `json:"token_program"`
+}
+
+func (obj *RedeemSharesForCurveYtInstruction) GetDiscriminator() []byte {
+	return Instruction_RedeemSharesForCurveYt[:]
+}
+
+// UnmarshalWithDecoder unmarshals the RedeemSharesForCurveYtInstruction from Borsh-encoded bytes prefixed with its discriminator.
+func (obj *RedeemSharesForCurveYtInstruction) UnmarshalWithDecoder(decoder *binary.Decoder) error {
+	var err error
+	// Read the discriminator and check it against the expected value:
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return fmt.Errorf("failed to read instruction discriminator for %s: %w", "RedeemSharesForCurveYtInstruction", err)
+	}
+	if discriminator != Instruction_RedeemSharesForCurveYt {
+		return fmt.Errorf("instruction discriminator mismatch for %s: expected %s, got %s", "RedeemSharesForCurveYtInstruction", Instruction_RedeemSharesForCurveYt, discriminator)
+	}
+	// Deserialize `CurveAmount`:
+	err = decoder.Decode(&obj.CurveAmount)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *RedeemSharesForCurveYtInstruction) UnmarshalAccountIndices(buf []byte) ([]uint8, error) {
+	// UnmarshalAccountIndices decodes account indices from Borsh-encoded bytes
+	decoder := binary.NewBorshDecoder(buf)
+	indices := make([]uint8, 0)
+	index := uint8(0)
+	var err error
+	// Decode from user account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user", err)
+	}
+	indices = append(indices, index)
+	// Decode from market account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "market", err)
+	}
+	indices = append(indices, index)
+	// Decode from series account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "series", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge_authority account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge_authority", err)
+	}
+	indices = append(indices, index)
+	// Decode from curve_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "curve_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from lc_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "lc_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from user_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from user_lc_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user_lc_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from vault_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "vault_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from token_program account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "token_program", err)
+	}
+	indices = append(indices, index)
+	return indices, nil
+}
+
+func (obj *RedeemSharesForCurveYtInstruction) PopulateFromAccountIndices(indices []uint8, accountKeys []solanago.PublicKey) error {
+	// PopulateFromAccountIndices sets account public keys from indices and account keys array
+	if len(indices) != 11 {
+		return fmt.Errorf("mismatch between expected accounts (%d) and provided indices (%d)", 11, len(indices))
+	}
+	indexOffset := 0
+	// Set user account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user", len(accountKeys)-1)
+	}
+	obj.User = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set market account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "market", len(accountKeys)-1)
+	}
+	obj.Market = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set series account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "series", len(accountKeys)-1)
+	}
+	obj.Series = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge", len(accountKeys)-1)
+	}
+	obj.Bridge = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge_authority account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge_authority", len(accountKeys)-1)
+	}
+	obj.BridgeAuthority = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set curve_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "curve_yt_mint", len(accountKeys)-1)
+	}
+	obj.CurveYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set lc_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "lc_yt_mint", len(accountKeys)-1)
+	}
+	obj.LcYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set user_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user_curve_yt", len(accountKeys)-1)
+	}
+	obj.UserCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set user_lc_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user_lc_yt", len(accountKeys)-1)
+	}
+	obj.UserLcYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set vault_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "vault_curve_yt", len(accountKeys)-1)
+	}
+	obj.VaultCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set token_program account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "token_program", len(accountKeys)-1)
+	}
+	obj.TokenProgram = accountKeys[indices[indexOffset]]
+	indexOffset++
+	return nil
+}
+
+func (obj *RedeemSharesForCurveYtInstruction) GetAccountKeys() []solanago.PublicKey {
+	keys := make([]solanago.PublicKey, 0)
+	keys = append(keys, obj.User)
+	keys = append(keys, obj.Market)
+	keys = append(keys, obj.Series)
+	keys = append(keys, obj.Bridge)
+	keys = append(keys, obj.BridgeAuthority)
+	keys = append(keys, obj.CurveYtMint)
+	keys = append(keys, obj.LcYtMint)
+	keys = append(keys, obj.UserCurveYt)
+	keys = append(keys, obj.UserLcYt)
+	keys = append(keys, obj.VaultCurveYt)
+	keys = append(keys, obj.TokenProgram)
+	return keys
+}
+
+// Unmarshal unmarshals the RedeemSharesForCurveYtInstruction from Borsh-encoded bytes prefixed with the discriminator.
+func (obj *RedeemSharesForCurveYtInstruction) Unmarshal(buf []byte) error {
+	var err error
+	err = obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling RedeemSharesForCurveYtInstruction: %w", err)
+	}
+	return nil
+}
+
+// UnmarshalRedeemSharesForCurveYtInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
+func UnmarshalRedeemSharesForCurveYtInstruction(buf []byte) (*RedeemSharesForCurveYtInstruction, error) {
+	obj := new(RedeemSharesForCurveYtInstruction)
+	var err error
+	err = obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
 type RedeemYieldInstruction struct {
 	Amount uint64 `json:"amount"`
 
@@ -1528,6 +2822,850 @@ func (obj *RedeemYieldInstruction) Unmarshal(buf []byte) error {
 // UnmarshalRedeemYieldInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
 func UnmarshalRedeemYieldInstruction(buf []byte) (*RedeemYieldInstruction, error) {
 	obj := new(RedeemYieldInstruction)
+	var err error
+	err = obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+type RegisterCurveLaunchInstruction struct {
+	CurveYtMint      solanago.PublicKey `json:"curve_yt_mint"`
+	Pool             solanago.PublicKey `json:"pool"`
+	LaunchFairPpm    uint32             `json:"launch_fair_ppm"`
+	InitialMcapUsd   uint64             `json:"initial_mcap_usd"`
+	MigrationMcapUsd uint64             `json:"migration_mcap_usd"`
+
+	// Accounts:
+	Registrar         solanago.PublicKey `json:"registrar"`
+	RegistrarWritable bool               `json:"registrar_writable"`
+	RegistrarSigner   bool               `json:"registrar_signer"`
+	Market            solanago.PublicKey `json:"market"`
+	Series            solanago.PublicKey `json:"series"`
+	Launch            solanago.PublicKey `json:"launch"`
+	LaunchWritable    bool               `json:"launch_writable"`
+	SystemProgram     solanago.PublicKey `json:"system_program"`
+}
+
+func (obj *RegisterCurveLaunchInstruction) GetDiscriminator() []byte {
+	return Instruction_RegisterCurveLaunch[:]
+}
+
+// UnmarshalWithDecoder unmarshals the RegisterCurveLaunchInstruction from Borsh-encoded bytes prefixed with its discriminator.
+func (obj *RegisterCurveLaunchInstruction) UnmarshalWithDecoder(decoder *binary.Decoder) error {
+	var err error
+	// Read the discriminator and check it against the expected value:
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return fmt.Errorf("failed to read instruction discriminator for %s: %w", "RegisterCurveLaunchInstruction", err)
+	}
+	if discriminator != Instruction_RegisterCurveLaunch {
+		return fmt.Errorf("instruction discriminator mismatch for %s: expected %s, got %s", "RegisterCurveLaunchInstruction", Instruction_RegisterCurveLaunch, discriminator)
+	}
+	// Deserialize `CurveYtMint`:
+	err = decoder.Decode(&obj.CurveYtMint)
+	if err != nil {
+		return err
+	}
+	// Deserialize `Pool`:
+	err = decoder.Decode(&obj.Pool)
+	if err != nil {
+		return err
+	}
+	// Deserialize `LaunchFairPpm`:
+	err = decoder.Decode(&obj.LaunchFairPpm)
+	if err != nil {
+		return err
+	}
+	// Deserialize `InitialMcapUsd`:
+	err = decoder.Decode(&obj.InitialMcapUsd)
+	if err != nil {
+		return err
+	}
+	// Deserialize `MigrationMcapUsd`:
+	err = decoder.Decode(&obj.MigrationMcapUsd)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *RegisterCurveLaunchInstruction) UnmarshalAccountIndices(buf []byte) ([]uint8, error) {
+	// UnmarshalAccountIndices decodes account indices from Borsh-encoded bytes
+	decoder := binary.NewBorshDecoder(buf)
+	indices := make([]uint8, 0)
+	index := uint8(0)
+	var err error
+	// Decode from registrar account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "registrar", err)
+	}
+	indices = append(indices, index)
+	// Decode from market account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "market", err)
+	}
+	indices = append(indices, index)
+	// Decode from series account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "series", err)
+	}
+	indices = append(indices, index)
+	// Decode from launch account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "launch", err)
+	}
+	indices = append(indices, index)
+	// Decode from system_program account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "system_program", err)
+	}
+	indices = append(indices, index)
+	return indices, nil
+}
+
+func (obj *RegisterCurveLaunchInstruction) PopulateFromAccountIndices(indices []uint8, accountKeys []solanago.PublicKey) error {
+	// PopulateFromAccountIndices sets account public keys from indices and account keys array
+	if len(indices) != 5 {
+		return fmt.Errorf("mismatch between expected accounts (%d) and provided indices (%d)", 5, len(indices))
+	}
+	indexOffset := 0
+	// Set registrar account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "registrar", len(accountKeys)-1)
+	}
+	obj.Registrar = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set market account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "market", len(accountKeys)-1)
+	}
+	obj.Market = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set series account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "series", len(accountKeys)-1)
+	}
+	obj.Series = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set launch account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "launch", len(accountKeys)-1)
+	}
+	obj.Launch = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set system_program account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "system_program", len(accountKeys)-1)
+	}
+	obj.SystemProgram = accountKeys[indices[indexOffset]]
+	indexOffset++
+	return nil
+}
+
+func (obj *RegisterCurveLaunchInstruction) GetAccountKeys() []solanago.PublicKey {
+	keys := make([]solanago.PublicKey, 0)
+	keys = append(keys, obj.Registrar)
+	keys = append(keys, obj.Market)
+	keys = append(keys, obj.Series)
+	keys = append(keys, obj.Launch)
+	keys = append(keys, obj.SystemProgram)
+	return keys
+}
+
+// Unmarshal unmarshals the RegisterCurveLaunchInstruction from Borsh-encoded bytes prefixed with the discriminator.
+func (obj *RegisterCurveLaunchInstruction) Unmarshal(buf []byte) error {
+	var err error
+	err = obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling RegisterCurveLaunchInstruction: %w", err)
+	}
+	return nil
+}
+
+// UnmarshalRegisterCurveLaunchInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
+func UnmarshalRegisterCurveLaunchInstruction(buf []byte) (*RegisterCurveLaunchInstruction, error) {
+	obj := new(RegisterCurveLaunchInstruction)
+	var err error
+	err = obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+type RequestCurveLaunchInstruction struct {
+	StartNonce  uint32 `json:"start_nonce"`
+	TargetNonce uint32 `json:"target_nonce"`
+
+	// Accounts:
+	Payer       solanago.PublicKey `json:"payer"`
+	PayerSigner bool               `json:"payer_signer"`
+	Market      solanago.PublicKey `json:"market"`
+	Registry    solanago.PublicKey `json:"registry"`
+}
+
+func (obj *RequestCurveLaunchInstruction) GetDiscriminator() []byte {
+	return Instruction_RequestCurveLaunch[:]
+}
+
+// UnmarshalWithDecoder unmarshals the RequestCurveLaunchInstruction from Borsh-encoded bytes prefixed with its discriminator.
+func (obj *RequestCurveLaunchInstruction) UnmarshalWithDecoder(decoder *binary.Decoder) error {
+	var err error
+	// Read the discriminator and check it against the expected value:
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return fmt.Errorf("failed to read instruction discriminator for %s: %w", "RequestCurveLaunchInstruction", err)
+	}
+	if discriminator != Instruction_RequestCurveLaunch {
+		return fmt.Errorf("instruction discriminator mismatch for %s: expected %s, got %s", "RequestCurveLaunchInstruction", Instruction_RequestCurveLaunch, discriminator)
+	}
+	// Deserialize `StartNonce`:
+	err = decoder.Decode(&obj.StartNonce)
+	if err != nil {
+		return err
+	}
+	// Deserialize `TargetNonce`:
+	err = decoder.Decode(&obj.TargetNonce)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *RequestCurveLaunchInstruction) UnmarshalAccountIndices(buf []byte) ([]uint8, error) {
+	// UnmarshalAccountIndices decodes account indices from Borsh-encoded bytes
+	decoder := binary.NewBorshDecoder(buf)
+	indices := make([]uint8, 0)
+	index := uint8(0)
+	var err error
+	// Decode from payer account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "payer", err)
+	}
+	indices = append(indices, index)
+	// Decode from market account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "market", err)
+	}
+	indices = append(indices, index)
+	// Decode from registry account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "registry", err)
+	}
+	indices = append(indices, index)
+	return indices, nil
+}
+
+func (obj *RequestCurveLaunchInstruction) PopulateFromAccountIndices(indices []uint8, accountKeys []solanago.PublicKey) error {
+	// PopulateFromAccountIndices sets account public keys from indices and account keys array
+	if len(indices) != 3 {
+		return fmt.Errorf("mismatch between expected accounts (%d) and provided indices (%d)", 3, len(indices))
+	}
+	indexOffset := 0
+	// Set payer account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "payer", len(accountKeys)-1)
+	}
+	obj.Payer = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set market account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "market", len(accountKeys)-1)
+	}
+	obj.Market = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set registry account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "registry", len(accountKeys)-1)
+	}
+	obj.Registry = accountKeys[indices[indexOffset]]
+	indexOffset++
+	return nil
+}
+
+func (obj *RequestCurveLaunchInstruction) GetAccountKeys() []solanago.PublicKey {
+	keys := make([]solanago.PublicKey, 0)
+	keys = append(keys, obj.Payer)
+	keys = append(keys, obj.Market)
+	keys = append(keys, obj.Registry)
+	return keys
+}
+
+// Unmarshal unmarshals the RequestCurveLaunchInstruction from Borsh-encoded bytes prefixed with the discriminator.
+func (obj *RequestCurveLaunchInstruction) Unmarshal(buf []byte) error {
+	var err error
+	err = obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling RequestCurveLaunchInstruction: %w", err)
+	}
+	return nil
+}
+
+// UnmarshalRequestCurveLaunchInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
+func UnmarshalRequestCurveLaunchInstruction(buf []byte) (*RequestCurveLaunchInstruction, error) {
+	obj := new(RequestCurveLaunchInstruction)
+	var err error
+	err = obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+type SwapCurveYtForStripYtInstruction struct {
+	CurveAmount uint64 `json:"curve_amount"`
+	StripAmount uint64 `json:"strip_amount"`
+	MinStripOut uint64 `json:"min_strip_out"`
+
+	// Accounts:
+	User                 solanago.PublicKey `json:"user"`
+	UserSigner           bool               `json:"user_signer"`
+	Market               solanago.PublicKey `json:"market"`
+	Series               solanago.PublicKey `json:"series"`
+	Bridge               solanago.PublicKey `json:"bridge"`
+	BridgeAuthority      solanago.PublicKey `json:"bridge_authority"`
+	StripYtMint          solanago.PublicKey `json:"strip_yt_mint"`
+	StripYtMintWritable  bool               `json:"strip_yt_mint_writable"`
+	CurveYtMint          solanago.PublicKey `json:"curve_yt_mint"`
+	CurveYtMintWritable  bool               `json:"curve_yt_mint_writable"`
+	UserStripYt          solanago.PublicKey `json:"user_strip_yt"`
+	UserStripYtWritable  bool               `json:"user_strip_yt_writable"`
+	UserCurveYt          solanago.PublicKey `json:"user_curve_yt"`
+	UserCurveYtWritable  bool               `json:"user_curve_yt_writable"`
+	VaultStripYt         solanago.PublicKey `json:"vault_strip_yt"`
+	VaultStripYtWritable bool               `json:"vault_strip_yt_writable"`
+	VaultCurveYt         solanago.PublicKey `json:"vault_curve_yt"`
+	VaultCurveYtWritable bool               `json:"vault_curve_yt_writable"`
+	TokenProgram         solanago.PublicKey `json:"token_program"`
+}
+
+func (obj *SwapCurveYtForStripYtInstruction) GetDiscriminator() []byte {
+	return Instruction_SwapCurveYtForStripYt[:]
+}
+
+// UnmarshalWithDecoder unmarshals the SwapCurveYtForStripYtInstruction from Borsh-encoded bytes prefixed with its discriminator.
+func (obj *SwapCurveYtForStripYtInstruction) UnmarshalWithDecoder(decoder *binary.Decoder) error {
+	var err error
+	// Read the discriminator and check it against the expected value:
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return fmt.Errorf("failed to read instruction discriminator for %s: %w", "SwapCurveYtForStripYtInstruction", err)
+	}
+	if discriminator != Instruction_SwapCurveYtForStripYt {
+		return fmt.Errorf("instruction discriminator mismatch for %s: expected %s, got %s", "SwapCurveYtForStripYtInstruction", Instruction_SwapCurveYtForStripYt, discriminator)
+	}
+	// Deserialize `CurveAmount`:
+	err = decoder.Decode(&obj.CurveAmount)
+	if err != nil {
+		return err
+	}
+	// Deserialize `StripAmount`:
+	err = decoder.Decode(&obj.StripAmount)
+	if err != nil {
+		return err
+	}
+	// Deserialize `MinStripOut`:
+	err = decoder.Decode(&obj.MinStripOut)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *SwapCurveYtForStripYtInstruction) UnmarshalAccountIndices(buf []byte) ([]uint8, error) {
+	// UnmarshalAccountIndices decodes account indices from Borsh-encoded bytes
+	decoder := binary.NewBorshDecoder(buf)
+	indices := make([]uint8, 0)
+	index := uint8(0)
+	var err error
+	// Decode from user account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user", err)
+	}
+	indices = append(indices, index)
+	// Decode from market account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "market", err)
+	}
+	indices = append(indices, index)
+	// Decode from series account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "series", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge_authority account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge_authority", err)
+	}
+	indices = append(indices, index)
+	// Decode from strip_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "strip_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from curve_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "curve_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from user_strip_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user_strip_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from user_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from vault_strip_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "vault_strip_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from vault_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "vault_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from token_program account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "token_program", err)
+	}
+	indices = append(indices, index)
+	return indices, nil
+}
+
+func (obj *SwapCurveYtForStripYtInstruction) PopulateFromAccountIndices(indices []uint8, accountKeys []solanago.PublicKey) error {
+	// PopulateFromAccountIndices sets account public keys from indices and account keys array
+	if len(indices) != 12 {
+		return fmt.Errorf("mismatch between expected accounts (%d) and provided indices (%d)", 12, len(indices))
+	}
+	indexOffset := 0
+	// Set user account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user", len(accountKeys)-1)
+	}
+	obj.User = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set market account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "market", len(accountKeys)-1)
+	}
+	obj.Market = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set series account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "series", len(accountKeys)-1)
+	}
+	obj.Series = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge", len(accountKeys)-1)
+	}
+	obj.Bridge = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge_authority account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge_authority", len(accountKeys)-1)
+	}
+	obj.BridgeAuthority = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set strip_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "strip_yt_mint", len(accountKeys)-1)
+	}
+	obj.StripYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set curve_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "curve_yt_mint", len(accountKeys)-1)
+	}
+	obj.CurveYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set user_strip_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user_strip_yt", len(accountKeys)-1)
+	}
+	obj.UserStripYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set user_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user_curve_yt", len(accountKeys)-1)
+	}
+	obj.UserCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set vault_strip_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "vault_strip_yt", len(accountKeys)-1)
+	}
+	obj.VaultStripYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set vault_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "vault_curve_yt", len(accountKeys)-1)
+	}
+	obj.VaultCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set token_program account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "token_program", len(accountKeys)-1)
+	}
+	obj.TokenProgram = accountKeys[indices[indexOffset]]
+	indexOffset++
+	return nil
+}
+
+func (obj *SwapCurveYtForStripYtInstruction) GetAccountKeys() []solanago.PublicKey {
+	keys := make([]solanago.PublicKey, 0)
+	keys = append(keys, obj.User)
+	keys = append(keys, obj.Market)
+	keys = append(keys, obj.Series)
+	keys = append(keys, obj.Bridge)
+	keys = append(keys, obj.BridgeAuthority)
+	keys = append(keys, obj.StripYtMint)
+	keys = append(keys, obj.CurveYtMint)
+	keys = append(keys, obj.UserStripYt)
+	keys = append(keys, obj.UserCurveYt)
+	keys = append(keys, obj.VaultStripYt)
+	keys = append(keys, obj.VaultCurveYt)
+	keys = append(keys, obj.TokenProgram)
+	return keys
+}
+
+// Unmarshal unmarshals the SwapCurveYtForStripYtInstruction from Borsh-encoded bytes prefixed with the discriminator.
+func (obj *SwapCurveYtForStripYtInstruction) Unmarshal(buf []byte) error {
+	var err error
+	err = obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling SwapCurveYtForStripYtInstruction: %w", err)
+	}
+	return nil
+}
+
+// UnmarshalSwapCurveYtForStripYtInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
+func UnmarshalSwapCurveYtForStripYtInstruction(buf []byte) (*SwapCurveYtForStripYtInstruction, error) {
+	obj := new(SwapCurveYtForStripYtInstruction)
+	var err error
+	err = obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+type SwapStripYtForCurveYtInstruction struct {
+	StripAmount uint64 `json:"strip_amount"`
+	CurveAmount uint64 `json:"curve_amount"`
+	MinCurveOut uint64 `json:"min_curve_out"`
+
+	// Accounts:
+	User                 solanago.PublicKey `json:"user"`
+	UserSigner           bool               `json:"user_signer"`
+	Market               solanago.PublicKey `json:"market"`
+	Series               solanago.PublicKey `json:"series"`
+	Bridge               solanago.PublicKey `json:"bridge"`
+	BridgeAuthority      solanago.PublicKey `json:"bridge_authority"`
+	StripYtMint          solanago.PublicKey `json:"strip_yt_mint"`
+	StripYtMintWritable  bool               `json:"strip_yt_mint_writable"`
+	CurveYtMint          solanago.PublicKey `json:"curve_yt_mint"`
+	CurveYtMintWritable  bool               `json:"curve_yt_mint_writable"`
+	UserStripYt          solanago.PublicKey `json:"user_strip_yt"`
+	UserStripYtWritable  bool               `json:"user_strip_yt_writable"`
+	UserCurveYt          solanago.PublicKey `json:"user_curve_yt"`
+	UserCurveYtWritable  bool               `json:"user_curve_yt_writable"`
+	VaultStripYt         solanago.PublicKey `json:"vault_strip_yt"`
+	VaultStripYtWritable bool               `json:"vault_strip_yt_writable"`
+	VaultCurveYt         solanago.PublicKey `json:"vault_curve_yt"`
+	VaultCurveYtWritable bool               `json:"vault_curve_yt_writable"`
+	TokenProgram         solanago.PublicKey `json:"token_program"`
+}
+
+func (obj *SwapStripYtForCurveYtInstruction) GetDiscriminator() []byte {
+	return Instruction_SwapStripYtForCurveYt[:]
+}
+
+// UnmarshalWithDecoder unmarshals the SwapStripYtForCurveYtInstruction from Borsh-encoded bytes prefixed with its discriminator.
+func (obj *SwapStripYtForCurveYtInstruction) UnmarshalWithDecoder(decoder *binary.Decoder) error {
+	var err error
+	// Read the discriminator and check it against the expected value:
+	discriminator, err := decoder.ReadDiscriminator()
+	if err != nil {
+		return fmt.Errorf("failed to read instruction discriminator for %s: %w", "SwapStripYtForCurveYtInstruction", err)
+	}
+	if discriminator != Instruction_SwapStripYtForCurveYt {
+		return fmt.Errorf("instruction discriminator mismatch for %s: expected %s, got %s", "SwapStripYtForCurveYtInstruction", Instruction_SwapStripYtForCurveYt, discriminator)
+	}
+	// Deserialize `StripAmount`:
+	err = decoder.Decode(&obj.StripAmount)
+	if err != nil {
+		return err
+	}
+	// Deserialize `CurveAmount`:
+	err = decoder.Decode(&obj.CurveAmount)
+	if err != nil {
+		return err
+	}
+	// Deserialize `MinCurveOut`:
+	err = decoder.Decode(&obj.MinCurveOut)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *SwapStripYtForCurveYtInstruction) UnmarshalAccountIndices(buf []byte) ([]uint8, error) {
+	// UnmarshalAccountIndices decodes account indices from Borsh-encoded bytes
+	decoder := binary.NewBorshDecoder(buf)
+	indices := make([]uint8, 0)
+	index := uint8(0)
+	var err error
+	// Decode from user account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user", err)
+	}
+	indices = append(indices, index)
+	// Decode from market account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "market", err)
+	}
+	indices = append(indices, index)
+	// Decode from series account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "series", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge", err)
+	}
+	indices = append(indices, index)
+	// Decode from bridge_authority account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "bridge_authority", err)
+	}
+	indices = append(indices, index)
+	// Decode from strip_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "strip_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from curve_yt_mint account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "curve_yt_mint", err)
+	}
+	indices = append(indices, index)
+	// Decode from user_strip_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user_strip_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from user_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "user_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from vault_strip_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "vault_strip_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from vault_curve_yt account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "vault_curve_yt", err)
+	}
+	indices = append(indices, index)
+	// Decode from token_program account index
+	index = uint8(0)
+	err = decoder.Decode(&index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode %s account index: %w", "token_program", err)
+	}
+	indices = append(indices, index)
+	return indices, nil
+}
+
+func (obj *SwapStripYtForCurveYtInstruction) PopulateFromAccountIndices(indices []uint8, accountKeys []solanago.PublicKey) error {
+	// PopulateFromAccountIndices sets account public keys from indices and account keys array
+	if len(indices) != 12 {
+		return fmt.Errorf("mismatch between expected accounts (%d) and provided indices (%d)", 12, len(indices))
+	}
+	indexOffset := 0
+	// Set user account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user", len(accountKeys)-1)
+	}
+	obj.User = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set market account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "market", len(accountKeys)-1)
+	}
+	obj.Market = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set series account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "series", len(accountKeys)-1)
+	}
+	obj.Series = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge", len(accountKeys)-1)
+	}
+	obj.Bridge = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set bridge_authority account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "bridge_authority", len(accountKeys)-1)
+	}
+	obj.BridgeAuthority = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set strip_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "strip_yt_mint", len(accountKeys)-1)
+	}
+	obj.StripYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set curve_yt_mint account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "curve_yt_mint", len(accountKeys)-1)
+	}
+	obj.CurveYtMint = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set user_strip_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user_strip_yt", len(accountKeys)-1)
+	}
+	obj.UserStripYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set user_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "user_curve_yt", len(accountKeys)-1)
+	}
+	obj.UserCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set vault_strip_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "vault_strip_yt", len(accountKeys)-1)
+	}
+	obj.VaultStripYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set vault_curve_yt account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "vault_curve_yt", len(accountKeys)-1)
+	}
+	obj.VaultCurveYt = accountKeys[indices[indexOffset]]
+	indexOffset++
+	// Set token_program account from index
+	if indices[indexOffset] >= uint8(len(accountKeys)) {
+		return fmt.Errorf("account index %d for %s is out of bounds (max: %d)", indices[indexOffset], "token_program", len(accountKeys)-1)
+	}
+	obj.TokenProgram = accountKeys[indices[indexOffset]]
+	indexOffset++
+	return nil
+}
+
+func (obj *SwapStripYtForCurveYtInstruction) GetAccountKeys() []solanago.PublicKey {
+	keys := make([]solanago.PublicKey, 0)
+	keys = append(keys, obj.User)
+	keys = append(keys, obj.Market)
+	keys = append(keys, obj.Series)
+	keys = append(keys, obj.Bridge)
+	keys = append(keys, obj.BridgeAuthority)
+	keys = append(keys, obj.StripYtMint)
+	keys = append(keys, obj.CurveYtMint)
+	keys = append(keys, obj.UserStripYt)
+	keys = append(keys, obj.UserCurveYt)
+	keys = append(keys, obj.VaultStripYt)
+	keys = append(keys, obj.VaultCurveYt)
+	keys = append(keys, obj.TokenProgram)
+	return keys
+}
+
+// Unmarshal unmarshals the SwapStripYtForCurveYtInstruction from Borsh-encoded bytes prefixed with the discriminator.
+func (obj *SwapStripYtForCurveYtInstruction) Unmarshal(buf []byte) error {
+	var err error
+	err = obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling SwapStripYtForCurveYtInstruction: %w", err)
+	}
+	return nil
+}
+
+// UnmarshalSwapStripYtForCurveYtInstruction unmarshals the instruction from Borsh-encoded bytes prefixed with the discriminator.
+func UnmarshalSwapStripYtForCurveYtInstruction(buf []byte) (*SwapStripYtForCurveYtInstruction, error) {
+	obj := new(SwapStripYtForCurveYtInstruction)
 	var err error
 	err = obj.Unmarshal(buf)
 	if err != nil {
@@ -2205,6 +4343,42 @@ func ParseInstruction(instructionData []byte, accountIndicesData []byte, account
 			}
 		}
 		return instruction, nil
+	case Instruction_DepositCurveYtForShares:
+		instruction := new(DepositCurveYtForSharesInstruction)
+		decoder := binary.NewBorshDecoder(instructionData)
+		err := instruction.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal instruction as DepositCurveYtForSharesInstruction: %w", err)
+		}
+		if accountIndicesData != nil && len(accountIndicesData) > 0 {
+			indices, err := instruction.UnmarshalAccountIndices(accountIndicesData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal account indices: %w", err)
+			}
+			err = instruction.PopulateFromAccountIndices(indices, accountKeys)
+			if err != nil {
+				return nil, fmt.Errorf("failed to populate accounts: %w", err)
+			}
+		}
+		return instruction, nil
+	case Instruction_InitCurveBridge:
+		instruction := new(InitCurveBridgeInstruction)
+		decoder := binary.NewBorshDecoder(instructionData)
+		err := instruction.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal instruction as InitCurveBridgeInstruction: %w", err)
+		}
+		if accountIndicesData != nil && len(accountIndicesData) > 0 {
+			indices, err := instruction.UnmarshalAccountIndices(accountIndicesData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal account indices: %w", err)
+			}
+			err = instruction.PopulateFromAccountIndices(indices, accountKeys)
+			if err != nil {
+				return nil, fmt.Errorf("failed to populate accounts: %w", err)
+			}
+		}
+		return instruction, nil
 	case Instruction_InitializeStrip:
 		instruction := new(InitializeStripInstruction)
 		decoder := binary.NewBorshDecoder(instructionData)
@@ -2259,12 +4433,102 @@ func ParseInstruction(instructionData []byte, accountIndicesData []byte, account
 			}
 		}
 		return instruction, nil
+	case Instruction_RedeemSharesForCurveYt:
+		instruction := new(RedeemSharesForCurveYtInstruction)
+		decoder := binary.NewBorshDecoder(instructionData)
+		err := instruction.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal instruction as RedeemSharesForCurveYtInstruction: %w", err)
+		}
+		if accountIndicesData != nil && len(accountIndicesData) > 0 {
+			indices, err := instruction.UnmarshalAccountIndices(accountIndicesData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal account indices: %w", err)
+			}
+			err = instruction.PopulateFromAccountIndices(indices, accountKeys)
+			if err != nil {
+				return nil, fmt.Errorf("failed to populate accounts: %w", err)
+			}
+		}
+		return instruction, nil
 	case Instruction_RedeemYield:
 		instruction := new(RedeemYieldInstruction)
 		decoder := binary.NewBorshDecoder(instructionData)
 		err := instruction.UnmarshalWithDecoder(decoder)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal instruction as RedeemYieldInstruction: %w", err)
+		}
+		if accountIndicesData != nil && len(accountIndicesData) > 0 {
+			indices, err := instruction.UnmarshalAccountIndices(accountIndicesData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal account indices: %w", err)
+			}
+			err = instruction.PopulateFromAccountIndices(indices, accountKeys)
+			if err != nil {
+				return nil, fmt.Errorf("failed to populate accounts: %w", err)
+			}
+		}
+		return instruction, nil
+	case Instruction_RegisterCurveLaunch:
+		instruction := new(RegisterCurveLaunchInstruction)
+		decoder := binary.NewBorshDecoder(instructionData)
+		err := instruction.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal instruction as RegisterCurveLaunchInstruction: %w", err)
+		}
+		if accountIndicesData != nil && len(accountIndicesData) > 0 {
+			indices, err := instruction.UnmarshalAccountIndices(accountIndicesData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal account indices: %w", err)
+			}
+			err = instruction.PopulateFromAccountIndices(indices, accountKeys)
+			if err != nil {
+				return nil, fmt.Errorf("failed to populate accounts: %w", err)
+			}
+		}
+		return instruction, nil
+	case Instruction_RequestCurveLaunch:
+		instruction := new(RequestCurveLaunchInstruction)
+		decoder := binary.NewBorshDecoder(instructionData)
+		err := instruction.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal instruction as RequestCurveLaunchInstruction: %w", err)
+		}
+		if accountIndicesData != nil && len(accountIndicesData) > 0 {
+			indices, err := instruction.UnmarshalAccountIndices(accountIndicesData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal account indices: %w", err)
+			}
+			err = instruction.PopulateFromAccountIndices(indices, accountKeys)
+			if err != nil {
+				return nil, fmt.Errorf("failed to populate accounts: %w", err)
+			}
+		}
+		return instruction, nil
+	case Instruction_SwapCurveYtForStripYt:
+		instruction := new(SwapCurveYtForStripYtInstruction)
+		decoder := binary.NewBorshDecoder(instructionData)
+		err := instruction.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal instruction as SwapCurveYtForStripYtInstruction: %w", err)
+		}
+		if accountIndicesData != nil && len(accountIndicesData) > 0 {
+			indices, err := instruction.UnmarshalAccountIndices(accountIndicesData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal account indices: %w", err)
+			}
+			err = instruction.PopulateFromAccountIndices(indices, accountKeys)
+			if err != nil {
+				return nil, fmt.Errorf("failed to populate accounts: %w", err)
+			}
+		}
+		return instruction, nil
+	case Instruction_SwapStripYtForCurveYt:
+		instruction := new(SwapStripYtForCurveYtInstruction)
+		decoder := binary.NewBorshDecoder(instructionData)
+		err := instruction.UnmarshalWithDecoder(decoder)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal instruction as SwapStripYtForCurveYtInstruction: %w", err)
 		}
 		if accountIndicesData != nil && len(accountIndicesData) > 0 {
 			indices, err := instruction.UnmarshalAccountIndices(accountIndicesData)

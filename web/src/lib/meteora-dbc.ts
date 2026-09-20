@@ -12,15 +12,22 @@ import {
   buildCurveWithMarketCap,
   deriveDbcPoolAddress,
 } from "@meteora-ag/dynamic-bonding-curve-sdk";
+import { computeCurvePolicy } from "./curve-policy";
 
-/** Native SOL wrapped mint — always available on Surfpool/mainnet forks */
+/** Native SOL wrapped mint — gas only; DBC quote leg uses USDC. */
 export const WSOL_MINT = new PublicKey(
   "So11111111111111111111111111111111111111112"
 );
 
+/** Circle USDC (mainnet / Surfpool mainnet fork). */
 export const USDC_MINT = new PublicKey(
   "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 );
+
+/** Default Meteora DBC / DAMM quote token. */
+export const DEFAULT_QUOTE_MINT = USDC_MINT;
+export const QUOTE_SYMBOL = "USDC";
+export const QUOTE_DECIMALS = 6;
 
 export const DBC_PROGRAM_ID = new PublicKey(
   "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN"
@@ -50,18 +57,26 @@ export type LaunchYtResult = {
  * Equity-strip curve: seed initial mcap from fair coupon (income notional),
  * migrate to DAMM v2 once discovery clears ~10× that level.
  */
-export function buildYtStripCurve(fairCoupon: number) {
-  // Market caps are in WSOL (SOL) units — Meteora DBC validates supply against these.
-  const initialMarketCap = Math.max(30, 30 + Math.round(fairCoupon * 500));
-  const migrationMarketCap = Math.max(600, initialMarketCap * 20);
+export function buildYtStripCurve(
+  fairCoupon: number,
+  lockNonces = 7,
+  refNotionalUsd?: number
+) {
+  const policy = computeCurvePolicy({
+    fairCoupon,
+    lockNonces,
+    refNotionalUsd,
+  });
+  const initialMarketCap = policy.initialMarketCapUsd;
+  const migrationMarketCap = policy.migrationMarketCapUsd;
 
   const configParams = buildCurveWithMarketCap({
     token: {
       tokenType: TokenType.SPLToken,
       tokenBaseDecimal: TokenDecimal.SIX,
-      tokenQuoteDecimal: TokenDecimal.NINE, // WSOL
+      tokenQuoteDecimal: TokenDecimal.SIX,
       tokenAuthorityOption: TokenAuthorityOption.Immutable,
-      totalTokenSupply: 1_000_000_000,
+      totalTokenSupply: policy.totalTokenSupply,
       leftover: 0,
     },
     fee: {
@@ -107,7 +122,7 @@ export function buildYtStripCurve(fairCoupon: number) {
     migrationMarketCap,
   });
 
-  return { configParams, initialMarketCap, migrationMarketCap };
+  return { configParams, initialMarketCap, migrationMarketCap, policy };
 }
 
 export async function buildLaunchYtOnDbc(args: {
@@ -116,9 +131,10 @@ export async function buildLaunchYtOnDbc(args: {
   window: StripWindow;
   quoteMint?: PublicKey;
 }): Promise<LaunchYtResult> {
-  const quoteMint = args.quoteMint ?? WSOL_MINT;
+  const quoteMint = args.quoteMint ?? DEFAULT_QUOTE_MINT;
+  const lockNonces = args.window.targetNonce - args.window.startNonce;
   const { configParams, initialMarketCap, migrationMarketCap } =
-    buildYtStripCurve(args.window.fairCoupon);
+    buildYtStripCurve(args.window.fairCoupon, lockNonces);
 
   const config = Keypair.generate();
   const baseMint = Keypair.generate();

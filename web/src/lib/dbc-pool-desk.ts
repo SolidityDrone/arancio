@@ -8,9 +8,10 @@ import {
   type VirtualPool,
   type PoolConfig,
 } from "@meteora-ag/dynamic-bonding-curve-sdk";
+import { QUOTE_DECIMALS } from "./meteora-dbc";
 
 export const DBC_BASE_DECIMALS = 6;
-export const DBC_QUOTE_DECIMALS = 9;
+export const DBC_QUOTE_DECIMALS = QUOTE_DECIMALS;
 
 export type DbcPoolSnapshot = {
   pool: string;
@@ -198,9 +199,30 @@ export async function buildDbcSwapTransaction(
   });
 }
 
-/** Format a raw token amount; pass quote-side flag for SOL leg. */
+/** Format a raw token amount; pass quote-side flag for USDC leg. */
 export function formatDbcAmount(raw: BN, isQuoteToken: boolean): string {
   return uiAmount(raw, isQuoteToken ? DBC_QUOTE_DECIMALS : DBC_BASE_DECIMALS);
+}
+
+export function rawDbcToUiNumber(raw: BN | bigint, isQuoteToken: boolean): number {
+  const decimals = isQuoteToken ? DBC_QUOTE_DECIMALS : DBC_BASE_DECIMALS;
+  return Number(raw.toString()) / 10 ** decimals;
+}
+
+/** Readable amounts — compact for huge curve/lcYT counts, precise for USDC. */
+export function formatDbcAmountCompact(
+  raw: BN | bigint,
+  isQuoteToken: boolean
+): string {
+  const ui = rawDbcToUiNumber(raw, isQuoteToken);
+  if (!Number.isFinite(ui)) return "—";
+  if (ui === 0) return "0";
+  if (isQuoteToken) {
+    return ui.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  if (ui >= 1_000_000) return `${(ui / 1_000_000).toFixed(2)}M`;
+  if (ui >= 10_000) return `${(ui / 1_000).toFixed(2)}k`;
+  return ui.toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
 export function isLocalRpc(endpoint: string): boolean {

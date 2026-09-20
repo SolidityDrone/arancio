@@ -26,4 +26,18 @@ pub enum DivStripError {
     LaunchMintMismatch,
     #[msg("invalid launch report encoding")]
     InvalidLaunchPayload,
+    #[msg("curve-YT mint does not match vault")]
+    BridgeMintMismatch,
+    #[msg("vault swap output below minimum")]
+    BridgeSlippage,
+    #[msg("curve-YT vault has insufficient curve-YT")]
+    InsufficientCurveYt,
+    #[msg("curve-YT vault has insufficient strip YT")]
+    InsufficientStripYt,
+    #[msg("curve-YT launch already registered for this series")]
+    LaunchAlreadyRegistered,
+    #[msg("registrar must be strip market authority")]
+    UnauthorizedRegistrar,
+    #[msg("canonical curve-YT launch not registered for this series")]
+    LaunchNotRegistered,
 }

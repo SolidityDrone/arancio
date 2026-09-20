@@ -4,7 +4,8 @@ export const CA_REGISTRY_PROGRAM_ID =
   "2WSNFu4xuaH55gpMRBN1p64YuiUXZzyze38ERXEy1U1z";
 
 export const DEFAULT_RPC =
-  import.meta.env.VITE_RPC_URL ?? "http://127.0.0.1:8899";
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_RPC_URL) ||
+  "http://127.0.0.1:8899";
 
 export const MULTIPLIER_SCALE = 1_000_000_000_000n;
 

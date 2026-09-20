@@ -2,7 +2,7 @@ import { buildYtStripCurve } from "./meteora-dbc";
 
 export type CurvePoint = { progress: number; mcapSol: number };
 
-/** Sample implied mcap (SOL) along the DBC bonding curve for charting. */
+/** Sample implied mcap (USDC) along the DBC bonding curve for charting. */
 export function sampleDbcCurve(fairCoupon: number, steps = 40): CurvePoint[] {
   const { initialMarketCap, migrationMarketCap, configParams } =
     buildYtStripCurve(fairCoupon);

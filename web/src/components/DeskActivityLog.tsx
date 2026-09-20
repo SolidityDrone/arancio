@@ -6,6 +6,7 @@ import {
   type ActivityFilter,
   type DeskActivity,
 } from "../lib/desk-activity";
+import { curveYtTicker } from "../lib/curve-yt-labels";
 import { solscanTxUrl } from "../lib/solscan";
 
 type Props = {
@@ -31,12 +32,14 @@ function activitySummary(row: DeskActivity): string {
         ? `${row.amount} ${row.amountSymbol ?? row.symbol} · ${window}`
         : window;
     case "dbc_launch":
-      return `YT pool · ${window}`;
+      return `curve-YT pool · ${window}`;
     case "dbc_swap": {
-      const dir = row.swapSide === "sell" ? "Sell YT" : "Buy YT";
+      const dir =
+        row.swapSide === "sell" ? "Sell curve-YT" : "Buy curve-YT";
+      const ticker = curveYtTicker(row.symbol);
       return row.amount
-        ? `${dir} · ${row.amount} ${row.amountSymbol ?? "SOL"} · ${window}`
-        : `${dir} · ${window}`;
+        ? `${dir} · ${row.amount} ${row.amountSymbol ?? ticker} · ${window}`
+        : `${dir} · ${ticker} · ${window}`;
     }
     case "redeem_pt":
       return row.amount
@@ -45,7 +48,7 @@ function activitySummary(row: DeskActivity): string {
     case "redeem_yt":
       return row.amount
         ? `${row.amount} ${row.amountSymbol ?? row.symbol} coupon · ${window}`
-        : `YT redeem · ${window}`;
+        : `strip YT redeem · ${window}`;
     case "unwrap":
       return row.amount
         ? `Unwrap ${row.amount} ${row.amountSymbol ?? row.symbol} · ${window}`
@@ -57,9 +60,11 @@ function activitySummary(row: DeskActivity): string {
 
 const EMPTY_BY_FILTER: Record<ActivityFilter, string> = {
   all: "No transactions yet — split or swap to log your first action here.",
-  bonding: "No bonding-curve actions yet — launch or swap on the DBC above.",
-  split: "No splits logged yet — split xStock into PT + YT above.",
-  redemption: "No redemptions yet — redeem PT/YT when a window matures.",
+  bonding:
+    "No curve-YT actions yet — launch or swap curve-YT on the Meteora panel above.",
+  split: "No splits logged yet — split xStock into strip PT + strip YT above.",
+  redemption:
+    "No redemptions yet — redeem strip PT/YT when a window matures.",
 };
 
 export function DeskActivityLog({ rpcEndpoint, symbol, activities }: Props) {

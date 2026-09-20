@@ -7,8 +7,10 @@ import binary "github.com/gagliardetto/binary"
 
 // Account discriminators
 var (
-	Account_StripMarket = binary.TypeID{97, 69, 55, 159, 150, 77, 121, 8}
-	Account_StripSeries = binary.TypeID{148, 168, 213, 1, 234, 58, 52, 239}
+	Account_CurveWindowLaunch = binary.TypeID{94, 140, 211, 164, 246, 0, 83, 157}
+	Account_CurveYtBridge     = binary.TypeID{138, 209, 19, 235, 3, 67, 199, 93}
+	Account_StripMarket       = binary.TypeID{97, 69, 55, 159, 150, 77, 121, 8}
+	Account_StripSeries       = binary.TypeID{148, 168, 213, 1, 234, 58, 52, 239}
 )
 
 // Event discriminators
@@ -18,11 +20,18 @@ var (
 
 // Instruction discriminators
 var (
-	Instruction_CreateSeries    = binary.TypeID{181, 9, 52, 120, 197, 221, 42, 142}
-	Instruction_InitializeStrip = binary.TypeID{56, 3, 183, 88, 222, 149, 200, 5}
-	Instruction_OnReport        = binary.TypeID{214, 173, 18, 221, 173, 148, 151, 208}
-	Instruction_RedeemCapital   = binary.TypeID{12, 18, 206, 142, 45, 144, 193, 18}
-	Instruction_RedeemYield     = binary.TypeID{232, 70, 202, 63, 211, 113, 10, 236}
-	Instruction_Unwrap          = binary.TypeID{126, 175, 198, 14, 212, 69, 50, 44}
-	Instruction_Wrap            = binary.TypeID{178, 40, 10, 189, 228, 129, 186, 140}
+	Instruction_CreateSeries            = binary.TypeID{181, 9, 52, 120, 197, 221, 42, 142}
+	Instruction_DepositCurveYtForShares = binary.TypeID{185, 2, 32, 208, 65, 134, 198, 12}
+	Instruction_InitCurveBridge         = binary.TypeID{68, 221, 2, 57, 67, 184, 60, 149}
+	Instruction_InitializeStrip         = binary.TypeID{56, 3, 183, 88, 222, 149, 200, 5}
+	Instruction_OnReport                = binary.TypeID{214, 173, 18, 221, 173, 148, 151, 208}
+	Instruction_RedeemCapital           = binary.TypeID{12, 18, 206, 142, 45, 144, 193, 18}
+	Instruction_RedeemSharesForCurveYt  = binary.TypeID{198, 85, 134, 81, 90, 32, 212, 32}
+	Instruction_RedeemYield             = binary.TypeID{232, 70, 202, 63, 211, 113, 10, 236}
+	Instruction_RegisterCurveLaunch     = binary.TypeID{252, 76, 27, 120, 25, 132, 70, 248}
+	Instruction_RequestCurveLaunch      = binary.TypeID{238, 228, 179, 2, 11, 133, 50, 167}
+	Instruction_SwapCurveYtForStripYt   = binary.TypeID{6, 192, 104, 211, 41, 93, 7, 141}
+	Instruction_SwapStripYtForCurveYt   = binary.TypeID{200, 3, 39, 195, 119, 151, 159, 162}
+	Instruction_Unwrap                  = binary.TypeID{126, 175, 198, 14, 212, 69, 50, 44}
+	Instruction_Wrap                    = binary.TypeID{178, 40, 10, 189, 228, 129, 186, 140}
 )

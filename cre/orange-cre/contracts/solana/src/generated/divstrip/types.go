@@ -213,6 +213,353 @@ func (c *Divstrip) WriteReportFromCaEvents(
 	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
 }
 
+// Canonical Meteora curve-YT pool registered for a strip series window.
+type CurveWindowLaunch struct {
+	Series      solanago.PublicKey `json:"series"`
+	CurveYtMint solanago.PublicKey `json:"curve_yt_mint"`
+	Pool        solanago.PublicKey `json:"pool"`
+	LaunchCumY  uint64             `json:"launch_cum_y"`
+
+	// Fair coupon at registration in parts-per-million (2% = 20_000).
+	LaunchFairPpm    uint32             `json:"launch_fair_ppm"`
+	InitialMcapUsd   uint64             `json:"initial_mcap_usd"`
+	MigrationMcapUsd uint64             `json:"migration_mcap_usd"`
+	RegisteredBy     solanago.PublicKey `json:"registered_by"`
+	Bump             uint8              `json:"bump"`
+}
+
+func (obj CurveWindowLaunch) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
+	// Serialize `Series`:
+	err = encoder.Encode(obj.Series)
+	if err != nil {
+		return errors.NewField("Series", err)
+	}
+	// Serialize `CurveYtMint`:
+	err = encoder.Encode(obj.CurveYtMint)
+	if err != nil {
+		return errors.NewField("CurveYtMint", err)
+	}
+	// Serialize `Pool`:
+	err = encoder.Encode(obj.Pool)
+	if err != nil {
+		return errors.NewField("Pool", err)
+	}
+	// Serialize `LaunchCumY`:
+	err = encoder.Encode(obj.LaunchCumY)
+	if err != nil {
+		return errors.NewField("LaunchCumY", err)
+	}
+	// Serialize `LaunchFairPpm`:
+	err = encoder.Encode(obj.LaunchFairPpm)
+	if err != nil {
+		return errors.NewField("LaunchFairPpm", err)
+	}
+	// Serialize `InitialMcapUsd`:
+	err = encoder.Encode(obj.InitialMcapUsd)
+	if err != nil {
+		return errors.NewField("InitialMcapUsd", err)
+	}
+	// Serialize `MigrationMcapUsd`:
+	err = encoder.Encode(obj.MigrationMcapUsd)
+	if err != nil {
+		return errors.NewField("MigrationMcapUsd", err)
+	}
+	// Serialize `RegisteredBy`:
+	err = encoder.Encode(obj.RegisteredBy)
+	if err != nil {
+		return errors.NewField("RegisteredBy", err)
+	}
+	// Serialize `Bump`:
+	err = encoder.Encode(obj.Bump)
+	if err != nil {
+		return errors.NewField("Bump", err)
+	}
+	return nil
+}
+
+func (obj CurveWindowLaunch) Marshal() ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	encoder := binary.NewBorshEncoder(buf)
+	err := obj.MarshalWithEncoder(encoder)
+	if err != nil {
+		return nil, fmt.Errorf("error while encoding CurveWindowLaunch: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func (obj *CurveWindowLaunch) UnmarshalWithDecoder(decoder *binary.Decoder) (err error) {
+	// Deserialize `Series`:
+	err = decoder.Decode(&obj.Series)
+	if err != nil {
+		return errors.NewField("Series", err)
+	}
+	// Deserialize `CurveYtMint`:
+	err = decoder.Decode(&obj.CurveYtMint)
+	if err != nil {
+		return errors.NewField("CurveYtMint", err)
+	}
+	// Deserialize `Pool`:
+	err = decoder.Decode(&obj.Pool)
+	if err != nil {
+		return errors.NewField("Pool", err)
+	}
+	// Deserialize `LaunchCumY`:
+	err = decoder.Decode(&obj.LaunchCumY)
+	if err != nil {
+		return errors.NewField("LaunchCumY", err)
+	}
+	// Deserialize `LaunchFairPpm`:
+	err = decoder.Decode(&obj.LaunchFairPpm)
+	if err != nil {
+		return errors.NewField("LaunchFairPpm", err)
+	}
+	// Deserialize `InitialMcapUsd`:
+	err = decoder.Decode(&obj.InitialMcapUsd)
+	if err != nil {
+		return errors.NewField("InitialMcapUsd", err)
+	}
+	// Deserialize `MigrationMcapUsd`:
+	err = decoder.Decode(&obj.MigrationMcapUsd)
+	if err != nil {
+		return errors.NewField("MigrationMcapUsd", err)
+	}
+	// Deserialize `RegisteredBy`:
+	err = decoder.Decode(&obj.RegisteredBy)
+	if err != nil {
+		return errors.NewField("RegisteredBy", err)
+	}
+	// Deserialize `Bump`:
+	err = decoder.Decode(&obj.Bump)
+	if err != nil {
+		return errors.NewField("Bump", err)
+	}
+	return nil
+}
+
+func (obj *CurveWindowLaunch) Unmarshal(buf []byte) error {
+	err := obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling CurveWindowLaunch: %w", err)
+	}
+	return nil
+}
+
+func UnmarshalCurveWindowLaunch(buf []byte) (*CurveWindowLaunch, error) {
+	obj := new(CurveWindowLaunch)
+	err := obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+func (c *Codec) EncodeCurveWindowLaunchStruct(in CurveWindowLaunch) ([]byte, error) {
+	return in.Marshal()
+}
+
+// WriteReportFromCurveWindowLaunch encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
+func (c *Divstrip) WriteReportFromCurveWindowLaunch(
+	runtime cre.Runtime,
+	input CurveWindowLaunch,
+	remainingAccounts []*solana.AccountMeta,
+	computeConfig *solana.ComputeConfig,
+) cre.Promise[*solana.WriteReportReply] {
+	encodedInput, err := c.Codec.EncodeCurveWindowLaunchStruct(input)
+	if err != nil {
+		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
+	}
+
+	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
+
+	fwdReport := bindings.ForwarderReport{
+		AccountHash: encodedAccountList,
+		Payload:     encodedInput,
+	}
+	encodedFwdReport, err := fwdReport.Marshal()
+	if err != nil {
+		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
+	}
+
+	promise := runtime.GenerateReport(&sdk.ReportRequest{
+		EncodedPayload: encodedFwdReport,
+		EncoderName:    "solana",
+		HashingAlgo:    "keccak256",
+		SigningAlgo:    "ecdsa",
+	})
+
+	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
+		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
+			ComputeConfig:     computeConfig,
+			Receiver:          ProgramID.Bytes(),
+			RemainingAccounts: remainingAccounts,
+			Report:            report,
+		})
+	})
+}
+
+func (c *Divstrip) WriteReportFromCurveWindowLaunchs(
+	runtime cre.Runtime,
+	inputs []CurveWindowLaunch,
+	remainingAccounts []*solana.AccountMeta,
+	computeConfig *solana.ComputeConfig,
+) cre.Promise[*solana.WriteReportReply] {
+	elements := make([][]byte, len(inputs))
+	for i, input := range inputs {
+		encoded, err := c.Codec.EncodeCurveWindowLaunchStruct(input)
+		if err != nil {
+			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
+		}
+		elements[i] = encoded
+	}
+	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
+}
+
+// Curve-YT vault: links a strip series to its Meteora curve-YT mint; vault ATAs hold escrow liquidity for strip exits.
+type CurveYtBridge struct {
+	Series      solanago.PublicKey `json:"series"`
+	CurveYtMint solanago.PublicKey `json:"curve_yt_mint"`
+
+	// liquid-curve-YT receipt mint (1:1 with curve-YT in vault).
+	LcYtMint solanago.PublicKey `json:"lc_yt_mint"`
+	Bump     uint8              `json:"bump"`
+}
+
+func (obj CurveYtBridge) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
+	// Serialize `Series`:
+	err = encoder.Encode(obj.Series)
+	if err != nil {
+		return errors.NewField("Series", err)
+	}
+	// Serialize `CurveYtMint`:
+	err = encoder.Encode(obj.CurveYtMint)
+	if err != nil {
+		return errors.NewField("CurveYtMint", err)
+	}
+	// Serialize `LcYtMint`:
+	err = encoder.Encode(obj.LcYtMint)
+	if err != nil {
+		return errors.NewField("LcYtMint", err)
+	}
+	// Serialize `Bump`:
+	err = encoder.Encode(obj.Bump)
+	if err != nil {
+		return errors.NewField("Bump", err)
+	}
+	return nil
+}
+
+func (obj CurveYtBridge) Marshal() ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	encoder := binary.NewBorshEncoder(buf)
+	err := obj.MarshalWithEncoder(encoder)
+	if err != nil {
+		return nil, fmt.Errorf("error while encoding CurveYtBridge: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func (obj *CurveYtBridge) UnmarshalWithDecoder(decoder *binary.Decoder) (err error) {
+	// Deserialize `Series`:
+	err = decoder.Decode(&obj.Series)
+	if err != nil {
+		return errors.NewField("Series", err)
+	}
+	// Deserialize `CurveYtMint`:
+	err = decoder.Decode(&obj.CurveYtMint)
+	if err != nil {
+		return errors.NewField("CurveYtMint", err)
+	}
+	// Deserialize `LcYtMint`:
+	err = decoder.Decode(&obj.LcYtMint)
+	if err != nil {
+		return errors.NewField("LcYtMint", err)
+	}
+	// Deserialize `Bump`:
+	err = decoder.Decode(&obj.Bump)
+	if err != nil {
+		return errors.NewField("Bump", err)
+	}
+	return nil
+}
+
+func (obj *CurveYtBridge) Unmarshal(buf []byte) error {
+	err := obj.UnmarshalWithDecoder(binary.NewBorshDecoder(buf))
+	if err != nil {
+		return fmt.Errorf("error while unmarshaling CurveYtBridge: %w", err)
+	}
+	return nil
+}
+
+func UnmarshalCurveYtBridge(buf []byte) (*CurveYtBridge, error) {
+	obj := new(CurveYtBridge)
+	err := obj.Unmarshal(buf)
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
+func (c *Codec) EncodeCurveYtBridgeStruct(in CurveYtBridge) ([]byte, error) {
+	return in.Marshal()
+}
+
+// WriteReportFromCurveYtBridge encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
+func (c *Divstrip) WriteReportFromCurveYtBridge(
+	runtime cre.Runtime,
+	input CurveYtBridge,
+	remainingAccounts []*solana.AccountMeta,
+	computeConfig *solana.ComputeConfig,
+) cre.Promise[*solana.WriteReportReply] {
+	encodedInput, err := c.Codec.EncodeCurveYtBridgeStruct(input)
+	if err != nil {
+		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
+	}
+
+	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
+
+	fwdReport := bindings.ForwarderReport{
+		AccountHash: encodedAccountList,
+		Payload:     encodedInput,
+	}
+	encodedFwdReport, err := fwdReport.Marshal()
+	if err != nil {
+		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
+	}
+
+	promise := runtime.GenerateReport(&sdk.ReportRequest{
+		EncodedPayload: encodedFwdReport,
+		EncoderName:    "solana",
+		HashingAlgo:    "keccak256",
+		SigningAlgo:    "ecdsa",
+	})
+
+	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
+		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
+			ComputeConfig:     computeConfig,
+			Receiver:          ProgramID.Bytes(),
+			RemainingAccounts: remainingAccounts,
+			Report:            report,
+		})
+	})
+}
+
+func (c *Divstrip) WriteReportFromCurveYtBridges(
+	runtime cre.Runtime,
+	inputs []CurveYtBridge,
+	remainingAccounts []*solana.AccountMeta,
+	computeConfig *solana.ComputeConfig,
+) cre.Promise[*solana.WriteReportReply] {
+	elements := make([][]byte, len(inputs))
+	for i, input := range inputs {
+		encoded, err := c.Codec.EncodeCurveYtBridgeStruct(input)
+		if err != nil {
+			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
+		}
+		elements[i] = encoded
+	}
+	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
+}
+
 // CRE WriteReport payload: after a Yield CA sync, request a YT window launch.
 type LaunchYtReport struct {
 	Mint       solanago.PublicKey `json:"mint"`

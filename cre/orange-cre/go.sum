@@ -81,12 +81,8 @@ github.com/shopspring/decimal v1.4.0 h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp
 github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
 github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260901153830-e6fa8fe62adf h1:1fGN0UEfjphGjTBrFtclKmJmqaukpYe5hBFctqlIYq0=
 github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260901153830-e6fa8fe62adf/go.mod h1:/i8hjTPFdVWHiY+QjeSiVS2Z3GB3WAZznGgXHstC02E=
-github.com/smartcontractkit/cre-sdk-go v1.19.0 h1:Fo5yZbuHULmKAcO9qr5Ke4/lYG81iTkQI9zCkXKbRmU=
-github.com/smartcontractkit/cre-sdk-go v1.19.0/go.mod h1:yvD3xSZnOmlOD8i+VHOCkyIxWlng6f+ut5825bxJdhs=
 github.com/smartcontractkit/cre-sdk-go v1.19.1-0.20260825010147-1107e987c1a8 h1:SdmSS6BGObw1y9+rYYQdMcu98WiNEjgpbnD8pRApp0Y=
 github.com/smartcontractkit/cre-sdk-go v1.19.1-0.20260825010147-1107e987c1a8/go.mod h1:yvD3xSZnOmlOD8i+VHOCkyIxWlng6f+ut5825bxJdhs=
-github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/solana v0.1.0-beta.1 h1:VTpFjEhGpFJKnl+B5vH/obnWUjRKeo1dSISP+FIL/eY=
-github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/solana v0.1.0-beta.1/go.mod h1:IHCd8wnWeL9yLVHkOTB2MxIuFE+Zil8Gw2jrrfPPU9Y=
 github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/solana v0.2.0-beta.1 h1:IuVYSsqglujci6wcRxv4imKkkeb11Ot1FiJ7R9D1uw0=
 github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/solana v0.2.0-beta.1/go.mod h1:TeFLISxxQznHWhx4+WjHAIXplg+k6O0upoUBzyNc4CU=
 github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http v1.4.0 h1:5qRJxqjubnqc0bGtHXNJ/rHQUu/kADJm+xhcIGlf5H4=

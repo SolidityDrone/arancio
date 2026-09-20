@@ -6,6 +6,7 @@ import {
   activityKindLabel,
   type DeskActivity,
 } from "../lib/desk-activity";
+import { curveYtWindowLabel } from "../lib/curve-yt-labels";
 import type { StockPortfolio } from "../lib/portfolio";
 import { solscanTxUrl } from "../lib/solscan";
 
@@ -91,9 +92,10 @@ export function DashboardStockModal({ stock, rpcEndpoint, onClose }: Props) {
 
           {owned.length > 0 ? (
             <section className="dashboard-section">
-              <h3>PT / YT by maturity</h3>
+              <h3>strip PT / strip YT</h3>
               <p className="hint dashboard-section-note">
-                Amounts in xStock units (same raw scale as underlying).
+                Real DivStrip legs from splitting xStock — amounts in xStock
+                units.
               </p>
               <div className="dashboard-table-wrap">
                 <table className="dashboard-table">
@@ -132,14 +134,17 @@ export function DashboardStockModal({ stock, rpcEndpoint, onClose }: Props) {
 
           {stock.dbcPools.length > 0 ? (
             <section className="dashboard-section">
-              <h3>Meteora DBC</h3>
+              <h3>Meteora curve-YT pools</h3>
               <ul className="dashboard-dbc-list">
                 {stock.dbcPools.map(({ launch, phase, progressPct }) => (
                   <li key={launch.pool}>
                     <div className="dashboard-dbc-main">
                       <span className="mono">
-                        YT{stock.market.symbol} · n{launch.startNonce}→n
-                        {launch.targetNonce}
+                        {curveYtWindowLabel(
+                          stock.market.symbol,
+                          launch.startNonce,
+                          launch.targetNonce
+                        )}
                       </span>
                       <span className="dashboard-dbc-phase">{phase}</span>
                     </div>

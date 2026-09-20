@@ -19,6 +19,9 @@ const DESK_MARKETS: DeskMarket[] = JSON.parse(
 const TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
+/** Circle USDC — mainnet / Surfpool mainnet fork (same as web/src/lib/meteora-dbc.ts). */
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
 type MintMeta = { decimals: number; programId: string };
 
 function usage(): never {
@@ -27,7 +30,8 @@ function usage(): never {
 Environment:
   ARANCIO_RPC_URL       RPC endpoint (default: http://127.0.0.1:8899)
   ARANCIO_FUND_WALLET   Wallet to fund (alternative to positional arg)
-  ARANCIO_FUND_SOL      SOL ui amount (default: 100)
+  ARANCIO_FUND_SOL      SOL ui amount for tx fees (default: 10)
+  ARANCIO_FUND_USDC     USDC ui amount for DBC desk (default: 50000)
   ARANCIO_FUND_TOKENS   xStock ui amount per mint (default: 100)
   ARANCIO_FUND_SYMBOLS  Comma-separated subset, e.g. KOx,XOMx (default: all desk markets)
 
@@ -141,7 +145,8 @@ async function main(): Promise<void> {
   }
 
   const rpcUrl = process.env.ARANCIO_RPC_URL ?? "http://127.0.0.1:8899";
-  const solAmount = Number(process.env.ARANCIO_FUND_SOL ?? "100");
+  const solAmount = Number(process.env.ARANCIO_FUND_SOL ?? "10");
+  const usdcAmount = Number(process.env.ARANCIO_FUND_USDC ?? "50000");
   const tokenAmount = Number(process.env.ARANCIO_FUND_TOKENS ?? "100");
   const symbolFilter = (process.env.ARANCIO_FUND_SYMBOLS ?? "")
     .split(",")
@@ -169,18 +174,31 @@ async function main(): Promise<void> {
   if (!Number.isFinite(tokenAmount) || tokenAmount <= 0) {
     throw new Error("ARANCIO_FUND_TOKENS must be a positive number");
   }
+  if (!Number.isFinite(usdcAmount) || usdcAmount <= 0) {
+    throw new Error("ARANCIO_FUND_USDC must be a positive number");
+  }
 
   await assertSurfpool(rpcUrl);
   const connection = new Connection(rpcUrl, "confirmed");
   const mintCache = new Map<string, MintMeta>();
 
   console.log(`Funding ${wallet.toBase58()} on ${rpcUrl}`);
-  console.log(`  SOL: ${solAmount}`);
+  console.log(`  SOL (fees): ${solAmount}`);
+  console.log(`  USDC (DBC): ${usdcAmount}`);
   console.log(`  xStocks: ${tokenAmount} each (${markets.length} mints)`);
   console.log("");
 
   process.stdout.write("SOL… ");
   await fundSol(rpcUrl, wallet.toBase58(), solAmount);
+  console.log("ok");
+
+  process.stdout.write("USDC… ");
+  const usdcMeta = await fetchMintMeta(
+    connection,
+    new PublicKey(USDC_MINT),
+    mintCache
+  );
+  await fundToken(rpcUrl, wallet.toBase58(), USDC_MINT, usdcAmount, usdcMeta);
   console.log("ok");
 
   for (const market of markets) {
@@ -193,7 +211,9 @@ async function main(): Promise<void> {
   const balance = await connection.getBalance(wallet, "confirmed");
   console.log("");
   console.log(`Done. SOL balance: ${(balance / LAMPORTS_PER_SOL).toFixed(4)}`);
-  console.log("Refresh Phantom (Surfpool RPC) — xStock ATAs should appear in the desk.");
+  console.log(
+    "Refresh Phantom (Surfpool RPC) — USDC + xStock ATAs should appear in the desk."
+  );
 }
 
 main().catch((err) => {

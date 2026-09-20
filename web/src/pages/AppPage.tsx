@@ -31,13 +31,18 @@ import {
   MULTIPLIER_SCALE,
 } from "../lib/markets";
 import {
-  buildLaunchYtOnDbc,
   fetchPoolProgress,
   loadLaunches,
   saveLaunch,
   StoredLaunch,
-  WSOL_MINT,
+  DEFAULT_QUOTE_MINT,
+  QUOTE_SYMBOL,
 } from "../lib/meteora-dbc";
+import {
+  requestPoolLaunch,
+  storedLaunchFromApi,
+} from "../lib/launch-api";
+import { fetchCurveLaunchState } from "../lib/strip-vault-tx";
 import {
   ensureRegistrySeeded,
   registryPda,
@@ -277,6 +282,10 @@ export function AppPage() {
   const [onchainEvents, setOnchainEvents] = useState(0);
   const [launches, setLaunches] = useState<StoredLaunch[]>([]);
   const [verifiedLaunch, setVerifiedLaunch] = useState<StoredLaunch | null>(null);
+  const [onChainLaunch, setOnChainLaunch] = useState<
+    Awaited<ReturnType<typeof fetchCurveLaunchState>> | null
+  >(null);
+  const [launchRefresh, setLaunchRefresh] = useState(0);
   const [poolProgress, setPoolProgress] = useState<{
     quoteProgress: number;
     isMigrated: boolean;
@@ -747,19 +756,59 @@ export function AppPage() {
   }, [symbol, windowStart, windowTarget]);
 
   useEffect(() => {
-    const launch = launches.find(
-      (l) =>
-        l.symbol === market.symbol &&
-        l.startNonce === inspectStart &&
-        l.targetNonce === inspectTarget
-    );
-    if (!launch) {
-      setVerifiedLaunch(null);
-      setPoolProgress(null);
-      return;
-    }
     let cancelled = false;
     (async () => {
+      const underlying = new PublicKey(market.mint);
+      const chain = await fetchCurveLaunchState(connection, {
+        underlyingMint: underlying,
+        startNonce: inspectStart,
+        targetNonce: inspectTarget,
+      });
+      if (cancelled) return;
+      setOnChainLaunch(chain);
+
+      const local = launches.find(
+        (l) =>
+          l.symbol === market.symbol &&
+          l.startNonce === inspectStart &&
+          l.targetNonce === inspectTarget
+      );
+
+      const inspectFair = fairCouponForWindow(inspectStart, inspectTarget);
+      let launch: StoredLaunch | null = null;
+
+      if (chain.registered && chain.pool && chain.curveYtMint) {
+        const poolMatch = local?.pool === chain.pool.toBase58();
+        launch = poolMatch
+          ? local!
+          : {
+              symbol: market.symbol,
+              startNonce: inspectStart,
+              targetNonce: inspectTarget,
+              fairCoupon:
+                (chain.launchFairPpm ?? Math.round(inspectFair * 1_000_000)) /
+                1_000_000,
+              config: local?.config ?? "",
+              pool: chain.pool.toBase58(),
+              baseMint: chain.curveYtMint.toBase58(),
+              quoteMint: DEFAULT_QUOTE_MINT.toBase58(),
+              initialMarketCap:
+                chain.initialMcapUsd ?? local?.initialMarketCap ?? 5_000,
+              migrationMarketCap:
+                chain.migrationMcapUsd ?? local?.migrationMarketCap ?? 75_000,
+              launchedAt: local?.launchedAt ?? Date.now(),
+              launchSignature: local?.launchSignature,
+            };
+      } else if (local) {
+        launch = local;
+      }
+
+      if (!launch) {
+        setVerifiedLaunch(null);
+        setPoolProgress(null);
+        return;
+      }
+
       const poolKey = new PublicKey(launch.pool);
       const poolInfo = await connection.getAccountInfo(poolKey);
       if (!poolInfo) {
@@ -785,7 +834,16 @@ export function AppPage() {
     return () => {
       cancelled = true;
     };
-  }, [connection, inspectStart, inspectTarget, launches, market.symbol]);
+  }, [
+    connection,
+    fairCouponForWindow,
+    inspectStart,
+    inspectTarget,
+    launchRefresh,
+    launches,
+    market.mint,
+    market.symbol,
+  ]);
 
   const activeLaunch = verifiedLaunch;
 
@@ -1016,7 +1074,7 @@ export function AppPage() {
       await refreshWalletBalance();
       await refreshLegHoldings();
       setStatus(
-        `Split confirmed · window ${start}→${target} · ${sig.slice(0, 8)}… — launch YT on Meteora next`
+        `Split confirmed · window ${start}→${target} · ${sig.slice(0, 8)}… — launch curve-YT pool on Meteora next`
       );
     } catch (err: unknown) {
       console.error(err);
@@ -1042,18 +1100,19 @@ export function AppPage() {
     windowTarget,
   ]);
 
-  const launchYt = useCallback(async () => {
-    if (!wallet.publicKey || !wallet.sendTransaction) {
-      setStatus("Connect a Solana wallet to launch on Meteora DBC.");
-      return;
-    }
+  const requestPool = useCallback(async () => {
     setBusy(true);
     setStatus("Checking registry…");
     try {
-      let start = inspectStart;
-      let target = inspectTarget;
+      const start = inspectStart;
+      const target = inspectTarget;
+      const windowFair = fairCouponForWindow(start, target);
 
       if (!registryReady) {
+        if (!wallet.publicKey || !wallet.sendTransaction) {
+          setStatus("Connect a wallet to seed ca_registry before requesting a pool.");
+          return;
+        }
         setStatus(`No ca_registry for ${market.symbol} — seeding from xStocks…`);
         const result = await ensureRegistrySeeded({
           connection,
@@ -1065,59 +1124,35 @@ export function AppPage() {
         setRegistryReady(true);
         applyTip(result.yieldNonce);
         setOnchainEvents(result.eventCount);
-        start = Math.max(result.yieldNonce, windowStart);
-        target = Math.max(start + 1, windowStart === start ? windowTarget : start + lockNonces);
         await refreshRegistry();
       }
 
-      setStatus("Building Meteora DBC config + pool (DAMM v2 graduation)…");
-      const launch = await buildLaunchYtOnDbc({
-        connection,
-        payer: wallet.publicKey,
-        quoteMint: WSOL_MINT,
-        window: {
-          symbol: market.symbol,
-          startNonce: start,
-          targetNonce: target,
-          fairCoupon,
-        },
-      });
-
-      launch.transaction.partialSign(...launch.signers);
-      const sig = await sendTransactionChecked(
-        connection,
-        launch.transaction,
-        wallet,
-        {
-          modalLabel: "DBC launch",
-          beforeWallet: (sim) =>
-            setStatus(
-              `${formatSimHint(sim)} · launch Meteora DBC — confirm in wallet`
-            ),
-        }
-      );
-
-      const poolInfo = await connection.getAccountInfo(launch.pool);
-      if (!poolInfo) {
-        throw new Error(
-          "Meteora tx confirmed but pool account missing — check Surfpool logs and retry."
-        );
-      }
-
-      const stored: StoredLaunch = {
+      setStatus("Requesting pool via backend → CRE → on-chain launch…");
+      const apiRes = await requestPoolLaunch({
+        mint: market.mint,
         symbol: market.symbol,
         startNonce: start,
         targetNonce: target,
-        fairCoupon,
-        config: launch.config.toBase58(),
-        pool: launch.pool.toBase58(),
-        baseMint: launch.baseMint.toBase58(),
-        quoteMint: launch.quoteMint.toBase58(),
-        initialMarketCap: launch.initialMarketCap,
-        migrationMarketCap: launch.migrationMarketCap,
-        launchedAt: Date.now(),
-        launchSignature: sig,
-      };
+        fairCoupon: windowFair,
+      });
+
+      const stored = storedLaunchFromApi(
+        {
+          mint: market.mint,
+          symbol: market.symbol,
+          startNonce: start,
+          targetNonce: target,
+          fairCoupon: windowFair,
+        },
+        apiRes
+      );
+      if (!stored) {
+        throw new Error(
+          apiRes.executorStatus ??
+            "Launch finished without pool metadata — check CRE + backend logs."
+        );
+      }
+
       saveLaunch(stored);
       appendDeskActivity({
         kind: "dbc_launch",
@@ -1125,36 +1160,39 @@ export function AppPage() {
         startNonce: start,
         targetNonce: target,
         at: Date.now(),
-        signature: sig,
+        signature: apiRes.launchSignature ?? "",
         pool: stored.pool,
         baseMint: stored.baseMint,
         quoteMint: stored.quoteMint,
       });
       setLaunches(loadLaunches());
       setActivityVersion((v) => v + 1);
+      setLaunchRefresh((v) => v + 1);
       setStatus(
-        `YT live on DBC · pool ${launch.pool.toBase58().slice(0, 8)}… · migrates at ~${launch.migrationMarketCap.toLocaleString()} SOL mcap`
+        `curve-YT pool live · ${stored.pool.slice(0, 8)}… · registered ${(apiRes.registerSignature ?? "").slice(0, 8)}…`
       );
     } catch (err: unknown) {
       console.error(err);
-      setStatus(explainTxError(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus(
+        /fetch|Failed to fetch|NetworkError/i.test(msg)
+          ? "Launch backend unreachable — start launch-backend + CRE HTTP trigger (see README)."
+          : explainTxError(err)
+      );
     } finally {
       setBusy(false);
     }
   }, [
     applyTip,
     connection,
-    fairCoupon,
+    fairCouponForWindow,
     inspectStart,
     inspectTarget,
-    lockNonces,
     market.mint,
     market.symbol,
     refreshRegistry,
     registryReady,
     wallet,
-    windowStart,
-    windowTarget,
   ]);
 
   const unwrapPosition = useCallback(
@@ -1694,8 +1732,8 @@ export function AppPage() {
                               </>
                             ) : (
                               <p className="split-meta hint">
-                                Need both PT and YT to unwrap — trade on the
-                                curve or wait for maturity.
+                                Need equal strip PT + strip YT — buy/sell{" "}
+                                curve-YT on Meteora or wait for maturity.
                               </p>
                             )}
                           </div>
@@ -1748,7 +1786,8 @@ export function AppPage() {
                     verifiedLaunch={activeLaunch}
                     poolProgress={poolProgress}
                     busy={busy}
-                    onLaunch={launchYt}
+                    onRequestPool={requestPool}
+                    launchRegisteredOnChain={Boolean(onChainLaunch?.registered)}
                     onSelectInspect={selectInspectWindow}
                     inspectStart={inspectStart}
                     inspectTarget={inspectTarget}
@@ -1776,7 +1815,8 @@ export function AppPage() {
                   verifiedLaunch={activeLaunch}
                   poolProgress={poolProgress}
                   busy={busy}
-                  onLaunch={launchYt}
+                  onRequestPool={requestPool}
+                  launchRegisteredOnChain={Boolean(onChainLaunch?.registered)}
                   onSelectInspect={selectInspectWindow}
                   inspectStart={inspectStart}
                   inspectTarget={inspectTarget}

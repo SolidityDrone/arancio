@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node tests/landing-scroll.test.mjs && node tests/curve-yt-vault.test.mjs && node tests/launch-api.test.mjs",
+    "launch-backend": "npx --yes tsx scripts/launch-backend.ts"
   },
   "dependencies": {
     "@anchor-lang/core": "1.1.2",

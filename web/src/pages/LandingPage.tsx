@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { ChainlinkCreBadge } from "../components/ChainlinkCreBadge";
+import { CurveYtLifecycle } from "../components/CurveYtLifecycle";
 import { Nav } from "../components/Nav";
 import { SceneBackdrop } from "../components/SceneBackdrop";
 import { StockLogo } from "../components/StockLogo";
@@ -22,8 +23,8 @@ export function LandingPage() {
                 Trade the <em>dividend</em>.
               </h1>
               <p className="hero-lead">
-                Wrap mega-cap xStocks into PT + YT for a frozen CA window — then
-                list the yield leg on Meteora DBC → DAMM v2.
+                Wrap mega-cap xStocks into strip PT + strip YT — or price the
+                window first with curve-YT on Meteora DBC → DAMM v2.
               </p>
               <div className="cta-row">
                 <Link className="btn btn-primary" to="/app">
@@ -31,6 +32,9 @@ export function LandingPage() {
                 </Link>
                 <a className="btn btn-ghost" href="#how">
                   How it works
+                </a>
+                <a className="btn btn-ghost" href="#lifecycle">
+                  curve-YT lifecycle
                 </a>
                 <a className="btn btn-ghost" href="#oracle">
                   Why the oracle
@@ -164,6 +168,18 @@ export function LandingPage() {
               </p>
             </div>
           </div>
+        </section>
+
+        <section className="section section-lifecycle" id="lifecycle">
+          <div className="section-rail">
+            <h2>curve-YT lifecycle</h2>
+            <p className="lead">
+              Meteora prices the forward yield window in USDC before anyone
+              splits. DivStrip mints the real legs. Graduation and maturity are
+              different clocks.
+            </p>
+          </div>
+          <CurveYtLifecycle showDeskLink />
         </section>
 
         <section className="section section-oracle" id="oracle">
@@ -307,11 +323,11 @@ export function LandingPage() {
             <article className="usecase">
               <div className="tag">Meteora</div>
               <div>
-                <h3>YT launch on DBC → DAMM v2</h3>
+                <h3>curve-YT on DBC → DAMM v2</h3>
                 <p>
-                  Each yield window gets a Dynamic Bonding Curve seeded from the
-                  fair coupon, then graduates to DAMM v2 — equity-strip discovery,
-                  not memecoin meta.
+                  Each window gets a curve-YT pool (USDC price discovery) seeded
+                  from the fair coupon, then graduates to DAMM v2. That token is
+                  not strip YT — see the lifecycle above.
                 </p>
               </div>
             </article>

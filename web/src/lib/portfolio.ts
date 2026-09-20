@@ -180,7 +180,7 @@ export async function fetchWalletPortfolio(
             phase: snap
               ? snap.isMigrated
                 ? "DAMM v2"
-                : `DBC · ${progressPct ?? 0}%`
+                : `curve-YT DBC · ${progressPct ?? 0}%`
               : "Unknown",
           };
         })

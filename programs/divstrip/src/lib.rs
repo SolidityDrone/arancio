@@ -12,8 +12,9 @@ use anchor_spl::{
 use ca_registry::state::{RegistryLog, MULTIPLIER_SCALE};
 use errors::DivStripError;
 use state::{
-    LaunchYtReport, StripMarket, StripSeries, MAX_SYMBOL_LEN, PT_MINT_SEED, SERIES_SEED,
-    SHARE_DECIMALS, STRIP_SEED, VAULT_SEED, YT_MINT_SEED,
+    CurveWindowLaunch, CurveYtBridge, LaunchYtReport, StripMarket, StripSeries, MAX_SYMBOL_LEN,
+    LC_YT_MINT_SEED, PT_MINT_SEED, SERIES_SEED, SHARE_DECIMALS, STRIP_SEED, VAULT_SEED,
+    YT_MINT_SEED, CURVE_BRIDGE_SEED, CURVE_LAUNCH_SEED,
 };
 
 declare_id!("A36nL7RVFp8KFWQdWmmS8wTnws1NoR3Vb4cbmChyhexz");
@@ -274,14 +275,332 @@ pub mod divstrip {
             .find_yield_nonce(start)
             .ok_or(DivStripError::YieldNonceNotFound)?;
 
-        emit!(YtLaunchRequested {
-            mint: launch.mint,
-            start_nonce: start,
-            target_nonce: target,
-            cum_y_start: start_event.cum_y,
+        emit_yt_launch_requested(
+            launch.mint,
+            start,
+            target,
+            start_event.cum_y,
+            lock,
+            launch,
+        );
+
+        Ok(())
+    }
+
+    /// Permissionless: request canonical curve-YT pool deployment for a strip window.
+    /// Emits `YtLaunchRequested` for CRE log-trigger / launcher workflows.
+    pub fn request_curve_launch(
+        ctx: Context<RequestCurveLaunch>,
+        start_nonce: u32,
+        target_nonce: u32,
+    ) -> Result<()> {
+        require!(target_nonce > start_nonce, DivStripError::InvalidLockNonces);
+        require_keys_eq!(
+            ctx.accounts.registry.mint,
+            ctx.accounts.market.underlying_mint,
+            DivStripError::RegistryMintMismatch
+        );
+        require!(
+            start_nonce >= ctx.accounts.registry.current_yield_nonce,
+            DivStripError::SeriesMismatch
+        );
+
+        let lock = target_nonce - start_nonce;
+        let start_event = ctx
+            .accounts
+            .registry
+            .find_yield_nonce(start_nonce)
+            .ok_or(DivStripError::YieldNonceNotFound)?;
+
+        let report = LaunchYtReport {
+            mint: ctx.accounts.market.underlying_mint,
             lock_nonces: lock,
-            report: launch,
-        });
+        };
+
+        emit_yt_launch_requested(
+            ctx.accounts.market.underlying_mint,
+            start_nonce,
+            target_nonce,
+            start_event.cum_y,
+            lock,
+            report,
+        );
+
+        Ok(())
+    }
+
+    /// Market authority registers the canonical Meteora pool after policy launch.
+    pub fn register_curve_launch(
+        ctx: Context<RegisterCurveLaunch>,
+        curve_yt_mint: Pubkey,
+        pool: Pubkey,
+        launch_fair_ppm: u32,
+        initial_mcap_usd: u64,
+        migration_mcap_usd: u64,
+    ) -> Result<()> {
+        require_keys_eq!(
+            ctx.accounts.registrar.key(),
+            ctx.accounts.market.authority,
+            DivStripError::UnauthorizedRegistrar
+        );
+        require!(
+            launch_fair_ppm > 0 && launch_fair_ppm <= 1_000_000,
+            DivStripError::InvalidLaunchPayload
+        );
+
+        let launch = &mut ctx.accounts.launch;
+        launch.series = ctx.accounts.series.key();
+        launch.curve_yt_mint = curve_yt_mint;
+        launch.pool = pool;
+        launch.launch_cum_y = ctx.accounts.series.cum_y_start;
+        launch.launch_fair_ppm = launch_fair_ppm;
+        launch.initial_mcap_usd = initial_mcap_usd;
+        launch.migration_mcap_usd = migration_mcap_usd;
+        launch.registered_by = ctx.accounts.registrar.key();
+        launch.bump = ctx.bumps.launch;
+
+        Ok(())
+    }
+
+    /// Link strip series to Meteora curve-YT mint and create curve-YT vault ATAs.
+    pub fn init_curve_bridge(ctx: Context<InitCurveBridge>, curve_mint: Pubkey) -> Result<()> {
+        require_keys_eq!(
+            ctx.accounts.launch.curve_yt_mint,
+            curve_mint,
+            DivStripError::BridgeMintMismatch
+        );
+        let bridge = &mut ctx.accounts.bridge;
+        bridge.series = ctx.accounts.series.key();
+        bridge.curve_yt_mint = curve_mint;
+        bridge.lc_yt_mint = ctx.accounts.lc_yt_mint.key();
+        bridge.bump = ctx.bumps.bridge;
+        Ok(())
+    }
+
+    /// Deposit curve-YT into vault; mint liquid-curve-YT 1:1 (after Meteora buy in same tx).
+    pub fn deposit_curve_yt_for_shares(
+        ctx: Context<VaultShareAction>,
+        curve_amount: u64,
+    ) -> Result<()> {
+        require!(curve_amount > 0, DivStripError::ZeroAmount);
+        require_keys_eq!(
+            ctx.accounts.curve_yt_mint.key(),
+            ctx.accounts.bridge.curve_yt_mint,
+            DivStripError::BridgeMintMismatch
+        );
+        require_keys_eq!(
+            ctx.accounts.lc_yt_mint.key(),
+            ctx.accounts.bridge.lc_yt_mint,
+            DivStripError::BridgeMintMismatch
+        );
+
+        token_interface::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from: ctx.accounts.user_curve_yt.to_account_info(),
+                    mint: ctx.accounts.curve_yt_mint.to_account_info(),
+                    to: ctx.accounts.vault_curve_yt.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            curve_amount,
+            ctx.accounts.curve_yt_mint.decimals,
+        )?;
+
+        let series_key = ctx.accounts.series.key();
+        let bump = [ctx.accounts.bridge.bump];
+        let seeds: &[&[u8]] = &[CURVE_BRIDGE_SEED, series_key.as_ref(), &bump];
+
+        token_interface::mint_to(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                MintTo {
+                    mint: ctx.accounts.lc_yt_mint.to_account_info(),
+                    to: ctx.accounts.user_lc_yt.to_account_info(),
+                    authority: ctx.accounts.bridge.to_account_info(),
+                },
+            )
+            .with_signer(&[seeds]),
+            curve_amount,
+        )?;
+
+        Ok(())
+    }
+
+    /// Burn liquid-curve-YT; withdraw curve-YT 1:1 from vault (before Meteora sell in same tx).
+    pub fn redeem_shares_for_curve_yt(
+        ctx: Context<VaultShareAction>,
+        curve_amount: u64,
+    ) -> Result<()> {
+        require!(curve_amount > 0, DivStripError::ZeroAmount);
+        require_keys_eq!(
+            ctx.accounts.curve_yt_mint.key(),
+            ctx.accounts.bridge.curve_yt_mint,
+            DivStripError::BridgeMintMismatch
+        );
+        require_keys_eq!(
+            ctx.accounts.lc_yt_mint.key(),
+            ctx.accounts.bridge.lc_yt_mint,
+            DivStripError::BridgeMintMismatch
+        );
+        require!(
+            ctx.accounts.vault_curve_yt.amount >= curve_amount,
+            DivStripError::InsufficientCurveYt
+        );
+
+        token_interface::burn(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                Burn {
+                    mint: ctx.accounts.lc_yt_mint.to_account_info(),
+                    from: ctx.accounts.user_lc_yt.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            curve_amount,
+        )?;
+
+        let series_key = ctx.accounts.series.key();
+        let bump = [ctx.accounts.bridge.bump];
+        let seeds: &[&[u8]] = &[CURVE_BRIDGE_SEED, series_key.as_ref(), &bump];
+
+        token_interface::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from: ctx.accounts.vault_curve_yt.to_account_info(),
+                    mint: ctx.accounts.curve_yt_mint.to_account_info(),
+                    to: ctx.accounts.user_curve_yt.to_account_info(),
+                    authority: ctx.accounts.bridge.to_account_info(),
+                },
+            )
+            .with_signer(&[seeds]),
+            curve_amount,
+            ctx.accounts.curve_yt_mint.decimals,
+        )?;
+
+        Ok(())
+    }
+
+    /// Deposit strip YT; receive curve-YT at client-quoted DAMM spot (`curve_amount >= min_curve_out`).
+    pub fn swap_strip_yt_for_curve_yt(
+        ctx: Context<SwapCurveBridge>,
+        strip_amount: u64,
+        curve_amount: u64,
+        min_curve_out: u64,
+    ) -> Result<()> {
+        require!(strip_amount > 0, DivStripError::ZeroAmount);
+        require!(curve_amount > 0, DivStripError::ZeroAmount);
+        require!(curve_amount >= min_curve_out, DivStripError::BridgeSlippage);
+        require_keys_eq!(
+            ctx.accounts.curve_yt_mint.key(),
+            ctx.accounts.bridge.curve_yt_mint,
+            DivStripError::BridgeMintMismatch
+        );
+        require_keys_eq!(
+            ctx.accounts.strip_yt_mint.key(),
+            ctx.accounts.series.yt_mint,
+            DivStripError::SeriesMismatch
+        );
+        require!(
+            ctx.accounts.vault_curve_yt.amount >= curve_amount,
+            DivStripError::InsufficientCurveYt
+        );
+
+        token_interface::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from: ctx.accounts.user_strip_yt.to_account_info(),
+                    mint: ctx.accounts.strip_yt_mint.to_account_info(),
+                    to: ctx.accounts.vault_strip_yt.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            strip_amount,
+            ctx.accounts.strip_yt_mint.decimals,
+        )?;
+
+        let series_key = ctx.accounts.series.key();
+        let bump = [ctx.accounts.bridge.bump];
+        let seeds: &[&[u8]] = &[CURVE_BRIDGE_SEED, series_key.as_ref(), &bump];
+
+        token_interface::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from: ctx.accounts.vault_curve_yt.to_account_info(),
+                    mint: ctx.accounts.curve_yt_mint.to_account_info(),
+                    to: ctx.accounts.user_curve_yt.to_account_info(),
+                    authority: ctx.accounts.bridge.to_account_info(),
+                },
+            )
+            .with_signer(&[seeds]),
+            curve_amount,
+            ctx.accounts.curve_yt_mint.decimals,
+        )?;
+
+        Ok(())
+    }
+
+    /// Deposit curve-YT; receive strip YT (`strip_amount >= min_strip_out`).
+    pub fn swap_curve_yt_for_strip_yt(
+        ctx: Context<SwapCurveBridge>,
+        curve_amount: u64,
+        strip_amount: u64,
+        min_strip_out: u64,
+    ) -> Result<()> {
+        require!(curve_amount > 0, DivStripError::ZeroAmount);
+        require!(strip_amount > 0, DivStripError::ZeroAmount);
+        require!(strip_amount >= min_strip_out, DivStripError::BridgeSlippage);
+        require_keys_eq!(
+            ctx.accounts.curve_yt_mint.key(),
+            ctx.accounts.bridge.curve_yt_mint,
+            DivStripError::BridgeMintMismatch
+        );
+        require_keys_eq!(
+            ctx.accounts.strip_yt_mint.key(),
+            ctx.accounts.series.yt_mint,
+            DivStripError::SeriesMismatch
+        );
+        require!(
+            ctx.accounts.vault_strip_yt.amount >= strip_amount,
+            DivStripError::InsufficientStripYt
+        );
+
+        token_interface::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from: ctx.accounts.user_curve_yt.to_account_info(),
+                    mint: ctx.accounts.curve_yt_mint.to_account_info(),
+                    to: ctx.accounts.vault_curve_yt.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            curve_amount,
+            ctx.accounts.curve_yt_mint.decimals,
+        )?;
+
+        let series_key = ctx.accounts.series.key();
+        let bump = [ctx.accounts.bridge.bump];
+        let seeds: &[&[u8]] = &[CURVE_BRIDGE_SEED, series_key.as_ref(), &bump];
+
+        token_interface::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from: ctx.accounts.vault_strip_yt.to_account_info(),
+                    mint: ctx.accounts.strip_yt_mint.to_account_info(),
+                    to: ctx.accounts.user_strip_yt.to_account_info(),
+                    authority: ctx.accounts.bridge.to_account_info(),
+                },
+            )
+            .with_signer(&[seeds]),
+            strip_amount,
+            ctx.accounts.strip_yt_mint.decimals,
+        )?;
 
         Ok(())
     }
@@ -598,6 +917,72 @@ pub struct RedeemLeg<'info> {
     pub leg_token_program: Interface<'info, TokenInterface>,
 }
 
+fn emit_yt_launch_requested(
+    mint: Pubkey,
+    start_nonce: u32,
+    target_nonce: u32,
+    cum_y_start: u64,
+    lock_nonces: u32,
+    report: LaunchYtReport,
+) {
+    emit!(YtLaunchRequested {
+        mint,
+        start_nonce,
+        target_nonce,
+        cum_y_start,
+        lock_nonces,
+        report,
+    });
+}
+
+#[derive(Accounts)]
+#[instruction(start_nonce: u32, target_nonce: u32)]
+pub struct RequestCurveLaunch<'info> {
+    pub payer: Signer<'info>,
+    #[account(
+        seeds = [STRIP_SEED, market.underlying_mint.as_ref()],
+        bump = market.bump,
+        constraint = market.registry == registry.key() @ DivStripError::RegistryMintMismatch
+    )]
+    pub market: Box<Account<'info, StripMarket>>,
+    #[account(
+        constraint = registry.mint == market.underlying_mint @ DivStripError::RegistryMintMismatch
+    )]
+    pub registry: Box<Account<'info, RegistryLog>>,
+}
+
+#[derive(Accounts)]
+#[instruction(curve_yt_mint: Pubkey, pool: Pubkey, launch_fair_ppm: u32, initial_mcap_usd: u64, migration_mcap_usd: u64)]
+pub struct RegisterCurveLaunch<'info> {
+    #[account(mut)]
+    pub registrar: Signer<'info>,
+    #[account(
+        seeds = [STRIP_SEED, market.underlying_mint.as_ref()],
+        bump = market.bump
+    )]
+    pub market: Box<Account<'info, StripMarket>>,
+    #[account(
+        seeds = [
+            SERIES_SEED,
+            market.key().as_ref(),
+            &series.start_nonce.to_le_bytes(),
+            &series.target_nonce.to_le_bytes()
+        ],
+        bump = series.bump,
+        has_one = market
+    )]
+    pub series: Box<Account<'info, StripSeries>>,
+    #[account(
+        init,
+        payer = registrar,
+        space = CurveWindowLaunch::SPACE,
+        seeds = [CURVE_LAUNCH_SEED, series.key().as_ref()],
+        bump
+    )]
+    pub launch: Box<Account<'info, CurveWindowLaunch>>,
+    pub system_program: Program<'info, System>,
+}
+
 fn verify_forwarder_authority(ctx: &Context<OnReport>) -> Result<()> {
     let forwarder_program = ctx.accounts.state.owner;
     let (expected_authority, _bump) = Pubkey::find_program_address(
@@ -614,6 +999,191 @@ fn verify_forwarder_authority(ctx: &Context<OnReport>) -> Result<()> {
         DivStripError::InvalidForwarderAuthority
     );
     Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(curve_mint: Pubkey)]
+pub struct InitCurveBridge<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        seeds = [STRIP_SEED, market.underlying_mint.as_ref()],
+        bump = market.bump
+    )]
+    pub market: Box<Account<'info, StripMarket>>,
+    #[account(
+        seeds = [
+            SERIES_SEED,
+            market.key().as_ref(),
+            &series.start_nonce.to_le_bytes(),
+            &series.target_nonce.to_le_bytes()
+        ],
+        bump = series.bump,
+        has_one = market
+    )]
+    pub series: Box<Account<'info, StripSeries>>,
+    #[account(
+        seeds = [CURVE_LAUNCH_SEED, series.key().as_ref()],
+        bump = launch.bump,
+        constraint = launch.curve_yt_mint == curve_mint @ DivStripError::BridgeMintMismatch
+    )]
+    pub launch: Box<Account<'info, CurveWindowLaunch>>,
+    #[account(
+        init,
+        payer = payer,
+        space = CurveYtBridge::SPACE,
+        seeds = [CURVE_BRIDGE_SEED, series.key().as_ref()],
+        bump
+    )]
+    pub bridge: Box<Account<'info, CurveYtBridge>>,
+    /// CHECK: bridge vault authority (same PDA as bridge state)
+    #[account(seeds = [CURVE_BRIDGE_SEED, series.key().as_ref()], bump)]
+    pub bridge_authority: UncheckedAccount<'info>,
+    #[account(
+        init,
+        payer = payer,
+        associated_token::mint = strip_yt_mint,
+        associated_token::authority = bridge_authority,
+        associated_token::token_program = token_program
+    )]
+    pub vault_strip_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(
+        init,
+        payer = payer,
+        associated_token::mint = curve_yt_mint,
+        associated_token::authority = bridge_authority,
+        associated_token::token_program = token_program
+    )]
+    pub vault_curve_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [LC_YT_MINT_SEED, series.key().as_ref()],
+        bump,
+        mint::decimals = SHARE_DECIMALS,
+        mint::authority = bridge,
+    )]
+    pub lc_yt_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(constraint = strip_yt_mint.key() == series.yt_mint)]
+    pub strip_yt_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub curve_yt_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub token_program: Interface<'info, TokenInterface>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct VaultShareAction<'info> {
+    pub user: Signer<'info>,
+    #[account(
+        seeds = [STRIP_SEED, market.underlying_mint.as_ref()],
+        bump = market.bump
+    )]
+    pub market: Box<Account<'info, StripMarket>>,
+    #[account(
+        seeds = [
+            SERIES_SEED,
+            market.key().as_ref(),
+            &series.start_nonce.to_le_bytes(),
+            &series.target_nonce.to_le_bytes()
+        ],
+        bump = series.bump,
+        has_one = market
+    )]
+    pub series: Box<Account<'info, StripSeries>>,
+    #[account(
+        seeds = [CURVE_BRIDGE_SEED, series.key().as_ref()],
+        bump = bridge.bump,
+        has_one = series
+    )]
+    pub bridge: Box<Account<'info, CurveYtBridge>>,
+    /// CHECK: bridge vault authority
+    #[account(
+        seeds = [CURVE_BRIDGE_SEED, series.key().as_ref()],
+        bump = bridge.bump
+    )]
+    pub bridge_authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        constraint = curve_yt_mint.key() == bridge.curve_yt_mint @ DivStripError::BridgeMintMismatch
+    )]
+    pub curve_yt_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(
+        mut,
+        constraint = lc_yt_mint.key() == bridge.lc_yt_mint @ DivStripError::BridgeMintMismatch
+    )]
+    pub lc_yt_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(mut)]
+    pub user_curve_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut)]
+    pub user_lc_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(
+        mut,
+        associated_token::mint = curve_yt_mint,
+        associated_token::authority = bridge_authority,
+        associated_token::token_program = token_program
+    )]
+    pub vault_curve_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+#[derive(Accounts)]
+pub struct SwapCurveBridge<'info> {
+    pub user: Signer<'info>,
+    #[account(
+        seeds = [STRIP_SEED, market.underlying_mint.as_ref()],
+        bump = market.bump
+    )]
+    pub market: Box<Account<'info, StripMarket>>,
+    #[account(
+        seeds = [
+            SERIES_SEED,
+            market.key().as_ref(),
+            &series.start_nonce.to_le_bytes(),
+            &series.target_nonce.to_le_bytes()
+        ],
+        bump = series.bump,
+        has_one = market
+    )]
+    pub series: Box<Account<'info, StripSeries>>,
+    #[account(
+        seeds = [CURVE_BRIDGE_SEED, series.key().as_ref()],
+        bump = bridge.bump,
+        has_one = series
+    )]
+    pub bridge: Box<Account<'info, CurveYtBridge>>,
+    /// CHECK: bridge vault authority
+    #[account(
+        seeds = [CURVE_BRIDGE_SEED, series.key().as_ref()],
+        bump = bridge.bump
+    )]
+    pub bridge_authority: UncheckedAccount<'info>,
+    #[account(mut, constraint = strip_yt_mint.key() == series.yt_mint)]
+    pub strip_yt_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(
+        mut,
+        constraint = curve_yt_mint.key() == bridge.curve_yt_mint @ DivStripError::BridgeMintMismatch
+    )]
+    pub curve_yt_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(mut)]
+    pub user_strip_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut)]
+    pub user_curve_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(
+        mut,
+        associated_token::mint = strip_yt_mint,
+        associated_token::authority = bridge_authority,
+        associated_token::token_program = token_program
+    )]
+    pub vault_strip_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(
+        mut,
+        associated_token::mint = curve_yt_mint,
+        associated_token::authority = bridge_authority,
+        associated_token::token_program = token_program
+    )]
+    pub vault_curve_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 #[derive(Accounts)]

@@ -1,0 +1,378 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { useWallet } from "@solana/wallet-adapter-react";
+import BN from "bn.js";
+import {
+  DBC_BASE_DECIMALS,
+  formatDbcAmount,
+  quoteDbcSwapExactIn,
+} from "../lib/dbc-pool-desk";
+import {
+  fetchCurveYtVaultMetrics,
+  quoteStripYtForCurveYtAtSpot,
+  type CurveYtVaultMetrics,
+  type StripExitQuote,
+} from "../lib/curve-yt-vault";
+import { CurveYtVaultSummary } from "./CurveYtVaultSummary";
+import {
+  buildPrepareAndInitVaultTransaction,
+  buildStripExitTransaction,
+  buildSwapStripForCurveTransaction,
+} from "../lib/strip-vault-tx";
+import { appendDeskActivity } from "../lib/desk-activity";
+import { sendTransactionChecked } from "../lib/wallet-tx";
+import { formatTxError } from "../lib/tx-error";
+import { curveYtTicker, lcYtTicker } from "../lib/curve-yt-labels";
+import { QUOTE_SYMBOL } from "../lib/meteora-dbc";
+import type { StripWindow } from "../lib/strip-tx";
+
+type Props = {
+  connection: Connection;
+  rpcEndpoint: string;
+  pool: string;
+  curveYtMint: string;
+  symbol: string;
+  startNonce: number;
+  targetNonce: number;
+  underlyingMint: string;
+  stripYtRaw: bigint;
+  fairCoupon: number;
+  launchFairCoupon: number;
+  onActivityLogged?: () => void;
+  onVaultRefresh?: () => void;
+  vaultRefreshKey?: number;
+};
+
+function formatLegRaw(raw: bigint, decimals = DBC_BASE_DECIMALS): string {
+  return formatDbcAmount(new BN(raw.toString()), false);
+}
+
+export function CurveYtVaultPanel({
+  connection,
+  pool,
+  curveYtMint,
+  symbol,
+  startNonce,
+  targetNonce,
+  underlyingMint,
+  stripYtRaw,
+  fairCoupon,
+  launchFairCoupon,
+  onActivityLogged,
+  onVaultRefresh,
+  vaultRefreshKey = 0,
+}: Props) {
+  const wallet = useWallet();
+  const curveTicker = curveYtTicker(symbol);
+  const lcTicker = lcYtTicker(symbol);
+  const [metrics, setMetrics] = useState<CurveYtVaultMetrics | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [exitAmountUi, setExitAmountUi] = useState("");
+  const [quote, setQuote] = useState<StripExitQuote | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const stripWindow = useMemo<StripWindow>(
+    () => ({
+      underlyingMint: new PublicKey(underlyingMint),
+      startNonce,
+      targetNonce,
+    }),
+    [underlyingMint, startNonce, targetNonce]
+  );
+
+  const exitAmountRaw = parseUiRaw(exitAmountUi);
+
+  const refreshMetrics = useCallback(async () => {
+    try {
+      const pk = wallet.publicKey ?? PublicKey.default;
+      const m = await fetchCurveYtVaultMetrics(
+        connection,
+        stripWindow,
+        new PublicKey(curveYtMint),
+        pool,
+        pk,
+        fairCoupon,
+        launchFairCoupon
+      );
+      setMetrics((prev) => ({
+        ...m,
+        pool: m.pool ?? prev?.pool ?? null,
+        poolQuoteReserveUi:
+          m.pool?.quoteReserveUi ?? prev?.poolQuoteReserveUi ?? m.poolQuoteReserveUi,
+        poolBaseReserveUi:
+          m.pool?.baseReserveUi ?? prev?.poolBaseReserveUi ?? m.poolBaseReserveUi,
+        quoteProgressPct:
+          m.quoteProgressPct ?? prev?.quoteProgressPct ?? null,
+        spotQuotePerCurveYt:
+          m.spotQuotePerCurveYt ?? prev?.spotQuotePerCurveYt ?? null,
+      }));
+    } catch (e) {
+      setStatus(formatTxError(e));
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, [
+    connection,
+    stripWindow,
+    curveYtMint,
+    pool,
+    wallet.publicKey,
+    fairCoupon,
+    launchFairCoupon,
+  ]);
+
+  useEffect(() => {
+    void refreshMetrics();
+  }, [refreshMetrics, vaultRefreshKey]);
+
+  useEffect(() => {
+    const id = globalThis.setInterval(() => void refreshMetrics(), 30_000);
+    return () => globalThis.clearInterval(id);
+  }, [refreshMetrics]);
+
+  const refreshQuote = useCallback(async () => {
+    if (exitAmountRaw === 0n) {
+      setQuote(null);
+      setQuoteError(null);
+      return;
+    }
+    try {
+      const q = await quoteStripYtForCurveYtAtSpot(
+        connection,
+        pool,
+        new BN(exitAmountRaw.toString()),
+        fairCoupon,
+        launchFairCoupon
+      );
+      setQuote(q);
+      setQuoteError(q ? null : "Pool quote unavailable");
+    } catch (e) {
+      setQuote(null);
+      setQuoteError(e instanceof Error ? e.message : "Quote failed");
+    }
+  }, [exitAmountRaw, connection, pool, fairCoupon, launchFairCoupon]);
+
+  useEffect(() => {
+    void refreshQuote();
+  }, [refreshQuote]);
+
+  const afterTx = () => {
+    onActivityLogged?.();
+    onVaultRefresh?.();
+    void refreshMetrics();
+  };
+
+  const runInitVault = async () => {
+    if (!wallet.publicKey) return;
+    setBusy(true);
+    setStatus(null);
+    try {
+      const tx = await buildPrepareAndInitVaultTransaction(
+        connection,
+        wallet.publicKey,
+        stripWindow,
+        new PublicKey(curveYtMint),
+        symbol
+      );
+      const sig = await sendTransactionChecked(connection, tx, wallet, {
+        modalLabel: "init curve-YT vault",
+      });
+      setStatus(`Vault initialized · ${sig.slice(0, 8)}…`);
+      afterTx();
+    } catch (e) {
+      setStatus(formatTxError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runStripExit = async (andSell: boolean) => {
+    if (!wallet.publicKey || !quote || exitAmountRaw === 0n) return;
+    setBusy(true);
+    setStatus(null);
+    try {
+      let tx;
+      if (andSell) {
+        const curveUi = formatDbcAmount(quote.curveYtOut, false);
+        const sellQuote = await quoteDbcSwapExactIn(
+          connection,
+          pool,
+          curveUi,
+          true,
+          100
+        );
+        if (!sellQuote) throw new Error("Sell quote failed");
+        tx = await buildStripExitTransaction(
+          connection,
+          wallet.publicKey,
+          stripWindow,
+          new PublicKey(curveYtMint),
+          pool,
+          exitAmountRaw,
+          BigInt(quote.curveYtOut.toString()),
+          BigInt(quote.minCurveYtOut.toString()),
+          sellQuote
+        );
+      } else {
+        tx = await buildSwapStripForCurveTransaction(
+          connection,
+          wallet.publicKey,
+          stripWindow,
+          new PublicKey(curveYtMint),
+          exitAmountRaw,
+          BigInt(quote.curveYtOut.toString()),
+          BigInt(quote.minCurveYtOut.toString())
+        );
+      }
+      const sig = await sendTransactionChecked(connection, tx, wallet, {
+        modalLabel: andSell ? "strip exit to USDC" : "swap strip for curve-YT",
+      });
+      appendDeskActivity({
+        kind: "dbc_swap",
+        symbol,
+        startNonce,
+        targetNonce,
+        signature: sig,
+        amount: exitAmountUi,
+        swapSide: "sell",
+      });
+      setStatus(
+        andSell
+          ? `Exited to ${QUOTE_SYMBOL} · ${sig.slice(0, 8)}…`
+          : `Swapped to ${curveTicker} · ${sig.slice(0, 8)}…`
+      );
+      afterTx();
+    } catch (e) {
+      setStatus(formatTxError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const canExit =
+    metrics?.initialized &&
+    metrics.vaultCurveYtRaw > 0n &&
+    stripYtRaw > 0n &&
+    !metrics.isMigrated;
+
+  return (
+    <div className="curve-vault-panel">
+      <p className="hint curve-vault-lead">
+        Bonders fund the vault via <strong>Buy via vault ({lcTicker})</strong>{" "}
+        above — USDC buys curve-YT on Meteora, deposits to the vault, and mints{" "}
+        {lcTicker}. Splitters swap <strong>strip YT</strong> for{" "}
+        <strong>{curveTicker}</strong> at live spot, then sell for {QUOTE_SYMBOL}.
+      </p>
+
+      <CurveYtVaultSummary
+        metrics={metrics}
+        loading={metricsLoading && !metrics}
+      />
+
+      {metrics?.loadError ? (
+        <p className="hint curve-vault-quote-error">{metrics.loadError}</p>
+      ) : null}
+
+      {metrics?.vaultExists && !metrics.curveMintMatch ? (
+        <p className="hint curve-vault-quote-error">
+          Curve-YT vault on this window is linked to a different curve-YT mint.
+          Reset Surfpool or relaunch the pool for window {startNonce}→
+          {targetNonce}.
+        </p>
+      ) : null}
+
+      {!metrics?.initialized && !metrics?.vaultExists ? (
+        <button
+          className="btn btn-sm btn-ghost"
+          disabled={busy || !wallet.publicKey}
+          onClick={() => void runInitVault()}
+          type="button"
+        >
+          Initialize curve-YT vault
+        </button>
+      ) : metrics?.initialized ? (
+        <section className="curve-vault-section">
+          <h5 className="curve-vault-section-title">
+            Exit strip YT → {QUOTE_SYMBOL}
+          </h5>
+          {stripYtRaw === 0n ? (
+            <p className="hint curve-vault-empty">
+              Split xStock first to mint strip YT for this window.
+            </p>
+          ) : (
+            <>
+              <p className="hint">
+                Your strip YT: {formatLegRaw(stripYtRaw)}
+              </p>
+              <label className="field">
+                <span>strip YT amount</span>
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  placeholder={`max ${formatLegRaw(stripYtRaw)}`}
+                  value={exitAmountUi}
+                  onChange={(e) => setExitAmountUi(e.target.value)}
+                />
+              </label>
+              {quote ? (
+                <div className="curve-vault-quote">
+                  <p>
+                    Spot → ~{formatDbcAmount(quote.curveYtOut, false)}{" "}
+                    {curveTicker}
+                  </p>
+                  <p className="hint">
+                    Implied {QUOTE_SYMBOL}: {quote.impliedQuoteValue} · fair adj{" "}
+                    {quote.fairMultiplier.toFixed(3)}×
+                  </p>
+                  <p className="hint">
+                    Min out: {formatDbcAmount(quote.minCurveYtOut, false)}{" "}
+                    (1% slippage)
+                  </p>
+                </div>
+              ) : quoteError ? (
+                <p className="hint curve-vault-quote-error">{quoteError}</p>
+              ) : null}
+              <div className="curve-vault-actions">
+                <button
+                  className="btn btn-sm btn-ghost"
+                  disabled={busy || !quote || !canExit}
+                  onClick={() => void runStripExit(false)}
+                  type="button"
+                >
+                  Swap for curve-YT
+                </button>
+                <button
+                  className="btn btn-sm btn-primary"
+                  disabled={busy || !quote || !canExit}
+                  onClick={() => void runStripExit(true)}
+                  type="button"
+                >
+                  Exit to {QUOTE_SYMBOL}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      ) : metricsLoading ? (
+        <p className="hint">Loading vault metrics…</p>
+      ) : null}
+
+      {status ? <p className="hint curve-vault-status">{status}</p> : null}
+    </div>
+  );
+}
+
+function parseUiRaw(amountUi: string): bigint {
+  const trimmed = amountUi.trim();
+  if (!trimmed || !/^\d*\.?\d+$/.test(trimmed)) return 0n;
+  const [whole, frac = ""] = trimmed.split(".");
+  if (frac.length > DBC_BASE_DECIMALS) return 0n;
+  const padded = `${whole || "0"}${frac.padEnd(DBC_BASE_DECIMALS, "0")}`;
+  try {
+    return BigInt(padded.replace(/^0+/, "") || "0");
+  } catch {
+    return 0n;
+  }
+}

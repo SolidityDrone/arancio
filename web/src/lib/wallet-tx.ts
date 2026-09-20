@@ -1,5 +1,6 @@
 import {
   Connection,
+  Keypair,
   PublicKey,
   Transaction,
   VersionedTransaction,
@@ -191,6 +192,12 @@ export type SendCheckedOptions = SendOptions & {
   waitForConfirmation?: boolean;
   /** Skip the full-screen signing modal. */
   skipModal?: boolean;
+  /**
+   * Ephemeral co-signers (e.g. DBC config + base mint keypairs).
+   * Passed to the wallet adapter as `signers` after the final blockhash refresh —
+   * do not partialSign before sendTransactionChecked or signatures go stale.
+   */
+  extraSigners?: Keypair[];
 };
 
 async function finishTxModalError(err: unknown, skipModal: boolean): Promise<void> {
@@ -219,6 +226,7 @@ export async function sendTransactionChecked(
     modalLabel,
     waitForConfirmation = true,
     skipModal = false,
+    extraSigners,
     ...sendOpts
   } = options ?? {};
 
@@ -241,6 +249,7 @@ export async function sendTransactionChecked(
       preflightCommitment: "confirmed",
       maxRetries: 3,
       ...sendOpts,
+      ...(extraSigners?.length ? { signers: extraSigners } : {}),
     });
   } catch (err) {
     await finishTxModalError(err, skipModal);

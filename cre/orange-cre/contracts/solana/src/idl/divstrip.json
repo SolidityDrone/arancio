@@ -10,7 +10,9 @@
     {
       "name": "create_series",
       "docs": [
-        "Create PT/YT mints for window `[start_nonce, target_nonce]`."
+        "Create PT/YT mints for window `[start_nonce, target_nonce]`.",
+        "`start_nonce` may be the tip or a future tip (`>= current_yield_nonce`) so",
+        "desks can open forward strips (e.g. tip=4 → window 6→7)."
       ],
       "discriminator": [
         181,
@@ -168,6 +170,555 @@
       ]
     },
     {
+      "name": "deposit_curve_yt_for_shares",
+      "docs": [
+        "Deposit curve-YT into vault; mint liquid-curve-YT 1:1 (after Meteora buy in same tx)."
+      ],
+      "discriminator": [
+        185,
+        2,
+        32,
+        208,
+        65,
+        134,
+        198,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          },
+          "relations": [
+            "series"
+          ]
+        },
+        {
+          "name": "series",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  114,
+                  105,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "series.start_nonce",
+                "account": "StripSeries"
+              },
+              {
+                "kind": "account",
+                "path": "series.target_nonce",
+                "account": "StripSeries"
+              }
+            ]
+          },
+          "relations": [
+            "bridge"
+          ]
+        },
+        {
+          "name": "bridge",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bridge_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "lc_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "user_curve_yt",
+          "writable": true
+        },
+        {
+          "name": "user_lc_yt",
+          "writable": true
+        },
+        {
+          "name": "vault_curve_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "curve_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "curve_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "init_curve_bridge",
+      "docs": [
+        "Link strip series to Meteora curve-YT mint and create curve-YT vault ATAs."
+      ],
+      "discriminator": [
+        68,
+        221,
+        2,
+        57,
+        67,
+        184,
+        60,
+        149
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          },
+          "relations": [
+            "series"
+          ]
+        },
+        {
+          "name": "series",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  114,
+                  105,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "series.start_nonce",
+                "account": "StripSeries"
+              },
+              {
+                "kind": "account",
+                "path": "series.target_nonce",
+                "account": "StripSeries"
+              }
+            ]
+          }
+        },
+        {
+          "name": "launch",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  108,
+                  97,
+                  117,
+                  110,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bridge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bridge_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_strip_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "strip_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_curve_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "curve_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "lc_yt_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  99,
+                  45,
+                  121,
+                  116,
+                  45,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "strip_yt_mint"
+        },
+        {
+          "name": "curve_yt_mint"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "curve_mint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "initialize_strip",
       "discriminator": [
         56,
@@ -253,10 +804,9 @@
     {
       "name": "on_report",
       "docs": [
-        "CRE path (Option A): after a Yield CA is written to ca_registry, the same",
-        "workflow WriteReports here. We emit `YtLaunchRequested` for window",
-        "`[current_yield_nonce, current + lock_nonces]` so a desk/crank can create",
-        "the Meteora DBC→DAMM pool (DBC create needs keypair signers CRE cannot supply)."
+        "CRE path (optional / unused by xstocks-ca-sync): emit `YtLaunchRequested`",
+        "for `[current_yield_nonce, current + lock_nonces]`. Desk initializes",
+        "Meteora DBC→DAMM directly; this receiver is kept for optional cranks."
       ],
       "discriminator": [
         214,
@@ -445,6 +995,226 @@
       ]
     },
     {
+      "name": "redeem_shares_for_curve_yt",
+      "docs": [
+        "Burn liquid-curve-YT; withdraw curve-YT 1:1 from vault (before Meteora sell in same tx)."
+      ],
+      "discriminator": [
+        198,
+        85,
+        134,
+        81,
+        90,
+        32,
+        212,
+        32
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          },
+          "relations": [
+            "series"
+          ]
+        },
+        {
+          "name": "series",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  114,
+                  105,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "series.start_nonce",
+                "account": "StripSeries"
+              },
+              {
+                "kind": "account",
+                "path": "series.target_nonce",
+                "account": "StripSeries"
+              }
+            ]
+          },
+          "relations": [
+            "bridge"
+          ]
+        },
+        {
+          "name": "bridge",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bridge_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "lc_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "user_curve_yt",
+          "writable": true
+        },
+        {
+          "name": "user_lc_yt",
+          "writable": true
+        },
+        {
+          "name": "vault_curve_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "curve_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "curve_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "redeem_yield",
       "discriminator": [
         232,
@@ -571,6 +1341,769 @@
       "args": [
         {
           "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "register_curve_launch",
+      "docs": [
+        "Market authority registers the canonical Meteora pool after policy launch."
+      ],
+      "discriminator": [
+        252,
+        76,
+        27,
+        120,
+        25,
+        132,
+        70,
+        248
+      ],
+      "accounts": [
+        {
+          "name": "registrar",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          },
+          "relations": [
+            "series"
+          ]
+        },
+        {
+          "name": "series",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  114,
+                  105,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "series.start_nonce",
+                "account": "StripSeries"
+              },
+              {
+                "kind": "account",
+                "path": "series.target_nonce",
+                "account": "StripSeries"
+              }
+            ]
+          }
+        },
+        {
+          "name": "launch",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  108,
+                  97,
+                  117,
+                  110,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "curve_yt_mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "pool",
+          "type": "pubkey"
+        },
+        {
+          "name": "launch_fair_ppm",
+          "type": "u32"
+        },
+        {
+          "name": "initial_mcap_usd",
+          "type": "u64"
+        },
+        {
+          "name": "migration_mcap_usd",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_curve_launch",
+      "docs": [
+        "Permissionless: request canonical curve-YT pool deployment for a strip window.",
+        "Emits `YtLaunchRequested` for CRE log-trigger / launcher workflows."
+      ],
+      "discriminator": [
+        238,
+        228,
+        179,
+        2,
+        11,
+        133,
+        50,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry"
+        }
+      ],
+      "args": [
+        {
+          "name": "start_nonce",
+          "type": "u32"
+        },
+        {
+          "name": "target_nonce",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "swap_curve_yt_for_strip_yt",
+      "docs": [
+        "Deposit curve-YT; receive strip YT (`strip_amount >= min_strip_out`)."
+      ],
+      "discriminator": [
+        6,
+        192,
+        104,
+        211,
+        41,
+        93,
+        7,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          },
+          "relations": [
+            "series"
+          ]
+        },
+        {
+          "name": "series",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  114,
+                  105,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "series.start_nonce",
+                "account": "StripSeries"
+              },
+              {
+                "kind": "account",
+                "path": "series.target_nonce",
+                "account": "StripSeries"
+              }
+            ]
+          },
+          "relations": [
+            "bridge"
+          ]
+        },
+        {
+          "name": "bridge",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bridge_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "strip_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "curve_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "user_strip_yt",
+          "writable": true
+        },
+        {
+          "name": "user_curve_yt",
+          "writable": true
+        },
+        {
+          "name": "vault_strip_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "strip_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_curve_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "curve_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "curve_amount",
+          "type": "u64"
+        },
+        {
+          "name": "strip_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_strip_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "swap_strip_yt_for_curve_yt",
+      "docs": [
+        "Deposit strip YT; receive curve-YT at client-quoted DAMM spot (`curve_amount >= min_curve_out`)."
+      ],
+      "discriminator": [
+        200,
+        3,
+        39,
+        195,
+        119,
+        151,
+        159,
+        162
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          },
+          "relations": [
+            "series"
+          ]
+        },
+        {
+          "name": "series",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  114,
+                  105,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "series.start_nonce",
+                "account": "StripSeries"
+              },
+              {
+                "kind": "account",
+                "path": "series.target_nonce",
+                "account": "StripSeries"
+              }
+            ]
+          },
+          "relations": [
+            "bridge"
+          ]
+        },
+        {
+          "name": "bridge",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bridge_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "strip_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "curve_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "user_strip_yt",
+          "writable": true
+        },
+        {
+          "name": "user_curve_yt",
+          "writable": true
+        },
+        {
+          "name": "vault_strip_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "strip_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_curve_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "curve_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "strip_amount",
+          "type": "u64"
+        },
+        {
+          "name": "curve_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_curve_out",
           "type": "u64"
         }
       ]
@@ -720,7 +2253,8 @@
     {
       "name": "wrap",
       "docs": [
-        "Escrow underlying and mint PT + YT 1:1 for the series window."
+        "Escrow underlying and mint PT + YT 1:1 for the series window.",
+        "Allowed while tip is still at or before the series start (spot or forward)."
       ],
       "discriminator": [
         178,
@@ -931,6 +2465,32 @@
   ],
   "accounts": [
     {
+      "name": "CurveWindowLaunch",
+      "discriminator": [
+        94,
+        140,
+        211,
+        164,
+        246,
+        0,
+        83,
+        157
+      ]
+    },
+    {
+      "name": "CurveYtBridge",
+      "discriminator": [
+        138,
+        209,
+        19,
+        235,
+        3,
+        67,
+        199,
+        93
+      ]
+    },
+    {
       "name": "StripMarket",
       "discriminator": [
         97,
@@ -1032,6 +2592,41 @@
       "code": 6011,
       "name": "InvalidLaunchPayload",
       "msg": "invalid launch report encoding"
+    },
+    {
+      "code": 6012,
+      "name": "BridgeMintMismatch",
+      "msg": "curve-YT mint does not match vault"
+    },
+    {
+      "code": 6013,
+      "name": "BridgeSlippage",
+      "msg": "vault swap output below minimum"
+    },
+    {
+      "code": 6014,
+      "name": "InsufficientCurveYt",
+      "msg": "curve-YT vault has insufficient curve-YT"
+    },
+    {
+      "code": 6015,
+      "name": "InsufficientStripYt",
+      "msg": "curve-YT vault has insufficient strip YT"
+    },
+    {
+      "code": 6016,
+      "name": "LaunchAlreadyRegistered",
+      "msg": "curve-YT launch already registered for this series"
+    },
+    {
+      "code": 6017,
+      "name": "UnauthorizedRegistrar",
+      "msg": "registrar must be strip market authority"
+    },
+    {
+      "code": 6018,
+      "name": "LaunchNotRegistered",
+      "msg": "canonical curve-YT launch not registered for this series"
     }
   ],
   "types": [
@@ -1080,6 +2675,86 @@
           {
             "name": "yield_nonce",
             "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CurveWindowLaunch",
+      "docs": [
+        "Canonical Meteora curve-YT pool registered for a strip series window."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "series",
+            "type": "pubkey"
+          },
+          {
+            "name": "curve_yt_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "launch_cum_y",
+            "type": "u64"
+          },
+          {
+            "name": "launch_fair_ppm",
+            "docs": [
+              "Fair coupon at registration in parts-per-million (2% = 20_000)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "initial_mcap_usd",
+            "type": "u64"
+          },
+          {
+            "name": "migration_mcap_usd",
+            "type": "u64"
+          },
+          {
+            "name": "registered_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CurveYtBridge",
+      "docs": [
+        "Curve-YT vault: links a strip series to its Meteora curve-YT mint; vault ATAs hold escrow liquidity for strip exits."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "series",
+            "type": "pubkey"
+          },
+          {
+            "name": "curve_yt_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "lc_yt_mint",
+            "docs": [
+              "liquid-curve-YT receipt mint (1:1 with curve-YT in vault)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }
