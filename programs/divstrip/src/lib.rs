@@ -23,10 +23,8 @@ declare_id!("A36nL7RVFp8KFWQdWmmS8wTnws1NoR3Vb4cbmChyhexz");
 #[event]
 pub struct YtLaunchRequested {
     pub mint: Pubkey,
-    pub start_nonce: u32,
-    pub target_nonce: u32,
+    pub yield_nonce: u32,
     pub cum_y_start: u64,
-    pub lock_nonces: u32,
     pub report: LaunchYtReport,
 }
 
@@ -37,13 +35,13 @@ pub mod divstrip {
     pub fn initialize_strip(
         ctx: Context<InitializeStrip>,
         symbol: String,
-        default_lock_nonces: u32,
+        max_forward_nonces: u32,
     ) -> Result<()> {
         require!(
             !symbol.is_empty() && symbol.len() <= MAX_SYMBOL_LEN,
             DivStripError::InvalidSymbol
         );
-        require!(default_lock_nonces > 0, DivStripError::InvalidLockNonces);
+        require!(max_forward_nonces > 0, DivStripError::InvalidForwardNonces);
         require_keys_eq!(
             ctx.accounts.registry.mint,
             ctx.accounts.underlying_mint.key(),
@@ -57,40 +55,32 @@ pub mod divstrip {
         market.symbol_len = symbol.len() as u8;
         market.symbol.fill(0);
         market.symbol[..symbol.len()].copy_from_slice(symbol.as_bytes());
-        market.default_lock_nonces = default_lock_nonces;
+        market.max_forward_nonces = max_forward_nonces;
         market.bump = ctx.bumps.market;
         market.vault_bump = ctx.bumps.vault_authority;
         Ok(())
     }
 
-    /// Create PT/YT mints for window `[start_nonce, target_nonce]`.
-    /// `start_nonce` may be the tip or a future tip (`>= current_yield_nonce`) so
-    /// desks can open forward strips (e.g. tip=4 → window 6→7).
-    pub fn create_series(
-        ctx: Context<CreateSeries>,
-        start_nonce: u32,
-        target_nonce: u32,
-    ) -> Result<()> {
-        require!(target_nonce > start_nonce, DivStripError::InvalidLockNonces);
-        require!(
-            target_nonce - start_nonce <= 32,
-            DivStripError::InvalidLockNonces
-        );
+    /// Create PT/YT mints for a single yield nonce (coupon step `nonce → nonce+1`).
+    /// `yield_nonce` may be the tip or a forward nonce within `max_forward_nonces`.
+    pub fn create_series(ctx: Context<CreateSeries>, yield_nonce: u32) -> Result<()> {
         require_keys_eq!(
             ctx.accounts.registry.mint,
             ctx.accounts.market.underlying_mint,
             DivStripError::RegistryMintMismatch
         );
+        let tip = ctx.accounts.registry.current_yield_nonce;
+        require!(yield_nonce >= tip, DivStripError::SeriesMismatch);
         require!(
-            start_nonce >= ctx.accounts.registry.current_yield_nonce,
+            yield_nonce <= tip.saturating_add(ctx.accounts.market.max_forward_nonces),
             DivStripError::SeriesMismatch
         );
 
-        // Tip windows pin cum_y now; forward windows resolve at redeem.
-        let cum_y_start = if start_nonce == ctx.accounts.registry.current_yield_nonce {
+        // Tip series pin cum_y now; forward series resolve at redeem.
+        let cum_y_start = if yield_nonce == tip {
             ctx.accounts
                 .registry
-                .find_yield_nonce(start_nonce)
+                .find_yield_nonce(yield_nonce)
                 .ok_or(DivStripError::YieldNonceNotFound)?
                 .cum_y
         } else {
@@ -100,8 +90,7 @@ pub mod divstrip {
         let series = &mut ctx.accounts.series;
         series.market = ctx.accounts.market.key();
         series.underlying_mint = ctx.accounts.market.underlying_mint;
-        series.start_nonce = start_nonce;
-        series.target_nonce = target_nonce;
+        series.yield_nonce = yield_nonce;
         series.pt_mint = ctx.accounts.pt_mint.key();
         series.yt_mint = ctx.accounts.yt_mint.key();
         series.cum_y_start = cum_y_start;
@@ -109,8 +98,8 @@ pub mod divstrip {
         Ok(())
     }
 
-    /// Escrow underlying and mint PT + YT 1:1 for the series window.
-    /// Allowed while tip is still at or before the series start (spot or forward).
+    /// Escrow underlying and mint PT + YT 1:1 for the series nonce.
+    /// Allowed while tip is still at or before the series yield nonce (spot or forward).
     pub fn wrap(ctx: Context<Wrap>, amount: u64) -> Result<()> {
         require!(amount > 0, DivStripError::ZeroAmount);
         require_keys_eq!(
@@ -119,7 +108,7 @@ pub mod divstrip {
             DivStripError::RegistryMintMismatch
         );
         require!(
-            ctx.accounts.registry.current_yield_nonce <= ctx.accounts.series.start_nonce,
+            ctx.accounts.registry.current_yield_nonce <= ctx.accounts.series.yield_nonce,
             DivStripError::SeriesMismatch
         );
 
@@ -138,14 +127,12 @@ pub mod divstrip {
         )?;
 
         let market_key = ctx.accounts.market.key();
-        let start_bytes = ctx.accounts.series.start_nonce.to_le_bytes();
-        let target_bytes = ctx.accounts.series.target_nonce.to_le_bytes();
+        let yield_bytes = ctx.accounts.series.yield_nonce.to_le_bytes();
         let series_bump = [ctx.accounts.series.bump];
         let seeds: &[&[u8]] = &[
             SERIES_SEED,
             market_key.as_ref(),
-            &start_bytes,
-            &target_bytes,
+            &yield_bytes,
             &series_bump,
         ];
 
@@ -237,8 +224,7 @@ pub mod divstrip {
     }
 
     /// CRE path (optional / unused by xstocks-ca-sync): emit `YtLaunchRequested`
-    /// for `[current_yield_nonce, current + lock_nonces]`. Desk initializes
-    /// Meteora DBC→DAMM directly; this receiver is kept for optional cranks.
+    /// for a single yield nonce. Desk initializes Meteora DBC→DAMM directly.
     pub fn on_report(
         ctx: Context<OnReport>,
         _metadata: Vec<u8>,
@@ -260,69 +246,62 @@ pub mod divstrip {
             DivStripError::LaunchMintMismatch
         );
 
-        let lock = if launch.lock_nonces == 0 {
-            ctx.accounts.market.default_lock_nonces
-        } else {
-            launch.lock_nonces
-        };
-        require!(lock > 0, DivStripError::InvalidLockNonces);
+        let tip = ctx.accounts.registry.current_yield_nonce;
+        require!(launch.yield_nonce >= tip, DivStripError::SeriesMismatch);
+        require!(
+            launch.yield_nonce <= tip.saturating_add(ctx.accounts.market.max_forward_nonces),
+            DivStripError::SeriesMismatch
+        );
 
-        let start = ctx.accounts.registry.current_yield_nonce;
-        let target = start.saturating_add(lock);
         let start_event = ctx
             .accounts
             .registry
-            .find_yield_nonce(start)
+            .find_yield_nonce(launch.yield_nonce)
             .ok_or(DivStripError::YieldNonceNotFound)?;
 
         emit_yt_launch_requested(
             launch.mint,
-            start,
-            target,
+            launch.yield_nonce,
             start_event.cum_y,
-            lock,
             launch,
         );
 
         Ok(())
     }
 
-    /// Permissionless: request canonical curve-YT pool deployment for a strip window.
+    /// Permissionless: request canonical curve-YT pool deployment for one yield nonce.
     /// Emits `YtLaunchRequested` for CRE log-trigger / launcher workflows.
     pub fn request_curve_launch(
         ctx: Context<RequestCurveLaunch>,
-        start_nonce: u32,
-        target_nonce: u32,
+        yield_nonce: u32,
     ) -> Result<()> {
-        require!(target_nonce > start_nonce, DivStripError::InvalidLockNonces);
         require_keys_eq!(
             ctx.accounts.registry.mint,
             ctx.accounts.market.underlying_mint,
             DivStripError::RegistryMintMismatch
         );
+        let tip = ctx.accounts.registry.current_yield_nonce;
+        require!(yield_nonce >= tip, DivStripError::SeriesMismatch);
         require!(
-            start_nonce >= ctx.accounts.registry.current_yield_nonce,
+            yield_nonce <= tip.saturating_add(ctx.accounts.market.max_forward_nonces),
             DivStripError::SeriesMismatch
         );
 
-        let lock = target_nonce - start_nonce;
         let start_event = ctx
             .accounts
             .registry
-            .find_yield_nonce(start_nonce)
+            .find_yield_nonce(yield_nonce)
             .ok_or(DivStripError::YieldNonceNotFound)?;
 
         let report = LaunchYtReport {
             mint: ctx.accounts.market.underlying_mint,
-            lock_nonces: lock,
+            yield_nonce,
         };
 
         emit_yt_launch_requested(
             ctx.accounts.market.underlying_mint,
-            start_nonce,
-            target_nonce,
+            yield_nonce,
             start_event.cum_y,
-            lock,
             report,
         );
 
@@ -609,9 +588,10 @@ pub mod divstrip {
 fn redeem_leg(ctx: Context<RedeemLeg>, amount: u64, is_capital: bool) -> Result<()> {
     require!(amount > 0, DivStripError::ZeroAmount);
     let registry = &ctx.accounts.registry;
+    let yield_nonce = ctx.accounts.series.yield_nonce;
     require!(
-        registry.current_yield_nonce >= ctx.accounts.series.target_nonce,
-        DivStripError::WindowNotMature
+        registry.current_yield_nonce >= yield_nonce.saturating_add(1),
+        DivStripError::NonceNotMature
     );
 
     if is_capital {
@@ -633,9 +613,9 @@ fn redeem_leg(ctx: Context<RedeemLeg>, amount: u64, is_capital: bool) -> Result<
         if stored > 0 {
             stored
         } else {
-            // Forward series: resolve once the start nonce exists on registry.
+            // Forward series: resolve once the yield nonce exists on registry.
             let start_event = registry
-                .find_yield_nonce(ctx.accounts.series.start_nonce)
+                .find_yield_nonce(yield_nonce)
                 .ok_or(DivStripError::YieldNonceNotFound)?;
             if start_event.cum_y == 0 {
                 MULTIPLIER_SCALE
@@ -645,7 +625,7 @@ fn redeem_leg(ctx: Context<RedeemLeg>, amount: u64, is_capital: bool) -> Result<
         }
     };
     let target_event = registry
-        .find_yield_nonce(ctx.accounts.series.target_nonce)
+        .find_yield_nonce(yield_nonce.saturating_add(1))
         .ok_or(DivStripError::YieldNonceNotFound)?;
     let cum_target = if target_event.cum_y == 0 {
         MULTIPLIER_SCALE
@@ -722,7 +702,7 @@ pub struct InitializeStrip<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(start_nonce: u32, target_nonce: u32)]
+#[instruction(yield_nonce: u32)]
 pub struct CreateSeries<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -743,8 +723,7 @@ pub struct CreateSeries<'info> {
         seeds = [
             SERIES_SEED,
             market.key().as_ref(),
-            &start_nonce.to_le_bytes(),
-            &target_nonce.to_le_bytes()
+            &yield_nonce.to_le_bytes()
         ],
         bump
     )]
@@ -755,8 +734,7 @@ pub struct CreateSeries<'info> {
         seeds = [
             PT_MINT_SEED,
             market.key().as_ref(),
-            &start_nonce.to_le_bytes(),
-            &target_nonce.to_le_bytes()
+            &yield_nonce.to_le_bytes()
         ],
         bump,
         mint::decimals = SHARE_DECIMALS,
@@ -769,8 +747,7 @@ pub struct CreateSeries<'info> {
         seeds = [
             YT_MINT_SEED,
             market.key().as_ref(),
-            &start_nonce.to_le_bytes(),
-            &target_nonce.to_le_bytes()
+            &yield_nonce.to_le_bytes()
         ],
         bump,
         mint::decimals = SHARE_DECIMALS,
@@ -800,8 +777,7 @@ pub struct Wrap<'info> {
         seeds = [
             SERIES_SEED,
             market.key().as_ref(),
-            &series.start_nonce.to_le_bytes(),
-            &series.target_nonce.to_le_bytes()
+            &series.yield_nonce.to_le_bytes()
         ],
         bump = series.bump,
         has_one = market,
@@ -849,8 +825,7 @@ pub struct Unwrap<'info> {
         seeds = [
             SERIES_SEED,
             market.key().as_ref(),
-            &series.start_nonce.to_le_bytes(),
-            &series.target_nonce.to_le_bytes()
+            &series.yield_nonce.to_le_bytes()
         ],
         bump = series.bump,
         has_one = market
@@ -894,8 +869,7 @@ pub struct RedeemLeg<'info> {
         seeds = [
             SERIES_SEED,
             market.key().as_ref(),
-            &series.start_nonce.to_le_bytes(),
-            &series.target_nonce.to_le_bytes()
+            &series.yield_nonce.to_le_bytes()
         ],
         bump = series.bump,
         has_one = market
@@ -919,24 +893,20 @@ pub struct RedeemLeg<'info> {
 
 fn emit_yt_launch_requested(
     mint: Pubkey,
-    start_nonce: u32,
-    target_nonce: u32,
+    yield_nonce: u32,
     cum_y_start: u64,
-    lock_nonces: u32,
     report: LaunchYtReport,
 ) {
     emit!(YtLaunchRequested {
         mint,
-        start_nonce,
-        target_nonce,
+        yield_nonce,
         cum_y_start,
-        lock_nonces,
         report,
     });
 }
 
 #[derive(Accounts)]
-#[instruction(start_nonce: u32, target_nonce: u32)]
+#[instruction(yield_nonce: u32)]
 pub struct RequestCurveLaunch<'info> {
     pub payer: Signer<'info>,
     #[account(
@@ -965,8 +935,7 @@ pub struct RegisterCurveLaunch<'info> {
         seeds = [
             SERIES_SEED,
             market.key().as_ref(),
-            &series.start_nonce.to_le_bytes(),
-            &series.target_nonce.to_le_bytes()
+            &series.yield_nonce.to_le_bytes()
         ],
         bump = series.bump,
         has_one = market
@@ -1015,8 +984,7 @@ pub struct InitCurveBridge<'info> {
         seeds = [
             SERIES_SEED,
             market.key().as_ref(),
-            &series.start_nonce.to_le_bytes(),
-            &series.target_nonce.to_le_bytes()
+            &series.yield_nonce.to_le_bytes()
         ],
         bump = series.bump,
         has_one = market
@@ -1084,8 +1052,7 @@ pub struct VaultShareAction<'info> {
         seeds = [
             SERIES_SEED,
             market.key().as_ref(),
-            &series.start_nonce.to_le_bytes(),
-            &series.target_nonce.to_le_bytes()
+            &series.yield_nonce.to_le_bytes()
         ],
         bump = series.bump,
         has_one = market
@@ -1139,8 +1106,7 @@ pub struct SwapCurveBridge<'info> {
         seeds = [
             SERIES_SEED,
             market.key().as_ref(),
-            &series.start_nonce.to_le_bytes(),
-            &series.target_nonce.to_le_bytes()
+            &series.yield_nonce.to_le_bytes()
         ],
         bump = series.bump,
         has_one = market

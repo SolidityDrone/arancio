@@ -2,13 +2,13 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { Program } from "@anchor-lang/core";
 import registryIdl from "./ca_registry.json";
 import { CA_REGISTRY_PROGRAM_ID, MULTIPLIER_SCALE } from "./markets";
-import { registryPda } from "./seed-registry";
+import { registryPda } from "./registry-pda";
 
 const REGISTRY_PROGRAM = new PublicKey(CA_REGISTRY_PROGRAM_ID);
 
 function readSeriesCumYStart(data: Buffer): bigint {
-  // StripSeries layout after discriminator: market(32) + underlying(32) + start(4) + target(4) + pt(32) + yt(32) + cum_y_start(8)
-  const offset = 8 + 32 + 32 + 4 + 4 + 32 + 32;
+  // StripSeries: market(32) + underlying(32) + yield_nonce(4) + pt_mint(32) + yt_mint(32) + cum_y_start(8)
+  const offset = 8 + 32 + 32 + 4 + 32 + 32;
   return data.readBigUInt64LE(offset);
 }
 

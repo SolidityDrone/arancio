@@ -1,21 +1,42 @@
-import { Link, NavLink } from "react-router-dom";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { ClientWalletButton } from "./ClientWalletButton";
+
+function NavItem({
+  href,
+  end,
+  children,
+}: {
+  href: string;
+  end?: boolean;
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const active = end ? pathname === href : pathname.startsWith(href);
+  return (
+    <Link href={href} className={active ? "active" : undefined} data-active={active}>
+      {children}
+    </Link>
+  );
+}
 
 export function Nav() {
   return (
     <header className="nav">
       <div className="nav-bar">
-        <Link to="/" className="brand">
+        <Link href="/" className="brand">
           DivStrip<span>_</span>
         </Link>
         <nav className="nav-links">
-          <NavLink to="/" end>
+          <NavItem href="/" end>
             Overview
-          </NavLink>
-          <NavLink to="/app">Strip desk</NavLink>
-          <NavLink to="/dashboard">Dashboard</NavLink>
+          </NavItem>
+          <NavItem href="/app">Strip desk</NavItem>
+          <NavItem href="/dashboard">Dashboard</NavItem>
         </nav>
-        <WalletMultiButton />
+        <ClientWalletButton />
       </div>
     </header>
   );

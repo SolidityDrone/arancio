@@ -1,6 +1,0 @@
-{
-  "chainSelector": "124615329519749607",
-  "txExecutorUrl": "http://127.0.0.1:8788/internal/execute",
-  "refNotionalUsd": 100,
-  "defaultFairCoupon": 0.02
-}

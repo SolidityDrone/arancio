@@ -4,14 +4,14 @@ use anchor_lang::prelude::*;
 pub enum DivStripError {
     #[msg("symbol must be 1-8 ASCII characters")]
     InvalidSymbol,
-    #[msg("lock_nonces must be greater than zero")]
-    InvalidLockNonces,
+    #[msg("max_forward_nonces must be greater than zero")]
+    InvalidForwardNonces,
     #[msg("registry mint does not match strip underlying")]
     RegistryMintMismatch,
     #[msg("series window does not match")]
     SeriesMismatch,
-    #[msg("yield window has not matured yet")]
-    WindowNotMature,
+    #[msg("yield nonce has not matured yet")]
+    NonceNotMature,
     #[msg("amount must be greater than zero")]
     ZeroAmount,
     #[msg("arithmetic overflow")]

@@ -1,12 +1,14 @@
 import { useEffect } from "react";
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import { StockLogo } from "./StockLogo";
 import {
   activitiesForSymbol,
   activityKindLabel,
+  activityYieldNonce,
   type DeskActivity,
 } from "../lib/desk-activity";
-import { curveYtWindowLabel } from "../lib/curve-yt-labels";
+import { curveYtNonceLabel } from "../lib/curve-yt-labels";
+import { launchYieldNonce } from "../lib/meteora-dbc";
 import type { StockPortfolio } from "../lib/portfolio";
 import { solscanTxUrl } from "../lib/solscan";
 
@@ -17,9 +19,9 @@ type Props = {
 };
 
 function activityLine(row: DeskActivity): string {
-  const window = `n${row.startNonce}→n${row.targetNonce}`;
-  if (row.amount) return `${row.amount} ${row.amountSymbol ?? ""} · ${window}`.trim();
-  return window;
+  const nonce = `n${activityYieldNonce(row)}`;
+  if (row.amount) return `${row.amount} ${row.amountSymbol ?? ""} · ${nonce}`.trim();
+  return nonce;
 }
 
 export function ownedWindowCount(stock: StockPortfolio): number {
@@ -81,7 +83,7 @@ export function DashboardStockModal({ stock, rpcEndpoint, onClose }: Props) {
               </dd>
             </div>
             <div>
-              <dt>Strip windows</dt>
+              <dt>Strip series</dt>
               <dd>{owned.length} owned</dd>
             </div>
             <div>
@@ -101,7 +103,7 @@ export function DashboardStockModal({ stock, rpcEndpoint, onClose }: Props) {
                 <table className="dashboard-table">
                   <thead>
                     <tr>
-                      <th>Window</th>
+                      <th>Nonce</th>
                       <th>PT</th>
                       <th>YT</th>
                       <th />
@@ -109,15 +111,13 @@ export function DashboardStockModal({ stock, rpcEndpoint, onClose }: Props) {
                   </thead>
                   <tbody>
                     {owned.map((w) => (
-                      <tr key={`${w.startNonce}:${w.targetNonce}`}>
-                        <td className="mono">
-                          n{w.startNonce}→n{w.targetNonce}
-                        </td>
+                      <tr key={w.yieldNonce}>
+                        <td className="mono">n{w.yieldNonce}</td>
                         <td className="mono">{w.ptAmount}</td>
                         <td className="mono">{w.ytAmount}</td>
                         <td>
                           <Link
-                            to={`/app?symbol=${encodeURIComponent(stock.market.symbol)}&start=${w.startNonce}&target=${w.targetNonce}`}
+                            href={`/app?symbol=${encodeURIComponent(stock.market.symbol)}&nonce=${w.yieldNonce}`}
                             className="dashboard-row-link"
                             onClick={onClose}
                           >
@@ -140,10 +140,9 @@ export function DashboardStockModal({ stock, rpcEndpoint, onClose }: Props) {
                   <li key={launch.pool}>
                     <div className="dashboard-dbc-main">
                       <span className="mono">
-                        {curveYtWindowLabel(
+                        {curveYtNonceLabel(
                           stock.market.symbol,
-                          launch.startNonce,
-                          launch.targetNonce
+                          launchYieldNonce(launch)
                         )}
                       </span>
                       <span className="dashboard-dbc-phase">{phase}</span>
@@ -153,7 +152,7 @@ export function DashboardStockModal({ stock, rpcEndpoint, onClose }: Props) {
                       {progressPct != null ? <> · {progressPct}% curve</> : null}
                     </div>
                     <Link
-                      to={`/app?symbol=${encodeURIComponent(stock.market.symbol)}&start=${launch.startNonce}&target=${launch.targetNonce}`}
+                      href={`/app?symbol=${encodeURIComponent(stock.market.symbol)}&nonce=${launchYieldNonce(launch)}`}
                       className="dashboard-row-link"
                       onClick={onClose}
                     >
@@ -196,7 +195,7 @@ export function DashboardStockModal({ stock, rpcEndpoint, onClose }: Props) {
 
         <footer className="dashboard-modal-foot">
           <Link
-            to={`/app?symbol=${encodeURIComponent(stock.market.symbol)}`}
+            href={`/app?symbol=${encodeURIComponent(stock.market.symbol)}`}
             className="btn btn-primary btn-sm"
             onClick={onClose}
           >

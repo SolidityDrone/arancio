@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   ACTIVITY_FILTERS,
   activityKindLabel,
+  activityYieldNonce,
   filterActivities,
   type ActivityFilter,
   type DeskActivity,
@@ -16,7 +17,7 @@ type Props = {
 };
 
 function formatWhen(ts: number) {
-  return new Date(ts).toLocaleString(undefined, {
+  return new Date(ts).toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -25,36 +26,36 @@ function formatWhen(ts: number) {
 }
 
 function activitySummary(row: DeskActivity): string {
-  const window = `n${row.startNonce}→n${row.targetNonce}`;
+  const nonce = `n${activityYieldNonce(row)}`;
   switch (row.kind) {
     case "split":
       return row.amount
-        ? `${row.amount} ${row.amountSymbol ?? row.symbol} · ${window}`
-        : window;
+        ? `${row.amount} ${row.amountSymbol ?? row.symbol} · ${nonce}`
+        : nonce;
     case "dbc_launch":
-      return `curve-YT pool · ${window}`;
+      return `curve-YT pool · ${nonce}`;
     case "dbc_swap": {
       const dir =
         row.swapSide === "sell" ? "Sell curve-YT" : "Buy curve-YT";
       const ticker = curveYtTicker(row.symbol);
       return row.amount
-        ? `${dir} · ${row.amount} ${row.amountSymbol ?? ticker} · ${window}`
-        : `${dir} · ${ticker} · ${window}`;
+        ? `${dir} · ${row.amount} ${row.amountSymbol ?? ticker} · ${nonce}`
+        : `${dir} · ${ticker} · ${nonce}`;
     }
     case "redeem_pt":
       return row.amount
-        ? `${row.amount} ${row.amountSymbol ?? row.symbol} capital · ${window}`
-        : `PT redeem · ${window}`;
+        ? `${row.amount} ${row.amountSymbol ?? row.symbol} capital · ${nonce}`
+        : `PT redeem · ${nonce}`;
     case "redeem_yt":
       return row.amount
-        ? `${row.amount} ${row.amountSymbol ?? row.symbol} coupon · ${window}`
-        : `strip YT redeem · ${window}`;
+        ? `${row.amount} ${row.amountSymbol ?? row.symbol} coupon · ${nonce}`
+        : `strip YT redeem · ${nonce}`;
     case "unwrap":
       return row.amount
-        ? `Unwrap ${row.amount} ${row.amountSymbol ?? row.symbol} · ${window}`
-        : `Unwrap · ${window}`;
+        ? `Unwrap ${row.amount} ${row.amountSymbol ?? row.symbol} · ${nonce}`
+        : `Unwrap · ${nonce}`;
     default:
-      return window;
+      return nonce;
   }
 }
 
@@ -64,7 +65,7 @@ const EMPTY_BY_FILTER: Record<ActivityFilter, string> = {
     "No curve-YT actions yet — launch or swap curve-YT on the Meteora panel above.",
   split: "No splits logged yet — split xStock into strip PT + strip YT above.",
   redemption:
-    "No redemptions yet — redeem strip PT/YT when a window matures.",
+    "No redemptions yet — redeem strip PT/YT when a series matures.",
 };
 
 export function DeskActivityLog({ rpcEndpoint, symbol, activities }: Props) {

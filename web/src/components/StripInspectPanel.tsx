@@ -1,25 +1,44 @@
 import { useEffect, useMemo, useState } from "react";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { CurvePolicyBand } from "./CurvePolicyBand";
 import { DbcCurveChart } from "./DbcCurveChart";
-import { buildYtStripCurve, type StoredLaunch } from "../lib/meteora-dbc";
+import { computeCurvePolicy } from "../lib/curve-policy";
+import {
+  launchYieldNonce,
+  type StoredLaunch,
+} from "../lib/meteora-dbc";
+import { previewYtStripCurve } from "../lib/curve-preview";
 import { DbcPoolPanel } from "./DbcPoolPanel";
-import { DIVSTRIP_PROGRAM_ID } from "../lib/markets";
 import { fetchWindowCumYs } from "../lib/registry-cum-y";
 import {
   formatRawAmount,
   legRates,
   phaseLabel,
   redeemOutputRaw,
-  windowPhase,
-  type WindowPhase,
+  seriesPhase,
+  type SeriesPhase,
 } from "../lib/strip-math";
 import { couponFromCum, MULTIPLIER_SCALE } from "../lib/markets";
 import { CurveYtVaultPanel } from "./CurveYtVaultPanel";
-import { CURVE_YT_CALLOUT, curveYtWindowLabel } from "../lib/curve-yt-labels";
+import {
+  CURVE_YT_CALLOUT,
+  curveYtNonceLabel,
+} from "../lib/curve-yt-labels";
+import { marketPda, seriesPda } from "../lib/strip-tx";
+import {
+  buildYieldNonceMaturityMap,
+  formatNonceMaturityLabel,
+  formatYieldNonceWindowLabel,
+  maturityForYieldNonce,
+} from "../lib/yield-nonce-dates";
+import type { CaListRow } from "../lib/xstocks-api";
+import {
+  DESK_LIVE_POLL_MS,
+  shouldPollLiveState,
+} from "../lib/live-poll";
 
 export type LegHoldingRow = {
-  startNonce: number;
-  targetNonce: number;
+  yieldNonce: number;
   seriesExists: boolean;
   ptAmount: string;
   ytAmount: string;
@@ -37,32 +56,27 @@ type Props = {
   legsLoading: boolean;
   verifiedLaunch: StoredLaunch | null;
   poolProgress: { quoteProgress: number; isMigrated: boolean } | null;
+  marketDataReady?: boolean;
   busy: boolean;
   onRequestPool?: () => void;
   launchRegisteredOnChain?: boolean;
-  onSelectInspect: (start: number, target: number) => void;
-  inspectStart: number;
-  inspectTarget: number;
-  inspectSource: "manual" | "portfolio";
-  onInspectSourceChange: (source: "manual" | "portfolio") => void;
-  onManualStartChange: (start: number) => void;
-  onManualTargetChange: (target: number) => void;
-  fairCouponForWindow: (start: number, target: number) => number;
+  onSelectInspect: (yieldNonce: number) => void;
+  inspectNonce: number;
+  fairCouponForNonce: (yieldNonce: number) => number;
+  caRows?: CaListRow[];
+  avgDistributionUsd?: number | null;
   rpcEndpoint: string;
   onDeskActivity?: () => void;
-  onRedeemPt?: (start: number, target: number, amountRaw: bigint) => void;
-  onRedeemYt?: (start: number, target: number, amountRaw: bigint) => void;
+  /** Bumped after on-chain txs so curve progress + cum-Y stats refetch. */
+  deskRefreshKey?: number;
+  onTxConfirmed?: () => void | Promise<void>;
+  onRedeemPt?: (yieldNonce: number, amountRaw: bigint) => void;
+  onRedeemYt?: (yieldNonce: number, amountRaw: bigint) => void;
   /** Render only the inspect column or market band (used by unified desk layout). */
   part?: "all" | "core" | "market";
 };
 
-const MANUAL_SELECT = "manual";
-
-function splitKey(start: number, target: number) {
-  return `${start}:${target}`;
-}
-
-function LegStatusBadge({ phase }: { phase: WindowPhase }) {
+function LegStatusBadge({ phase }: { phase: SeriesPhase }) {
   return (
     <span className={`leg-phase leg-phase-${phase}`}>{phaseLabel(phase)}</span>
   );
@@ -78,19 +92,19 @@ export function StripInspectPanel({
   legsLoading,
   verifiedLaunch,
   poolProgress,
+  marketDataReady = true,
   busy,
   onRequestPool,
   launchRegisteredOnChain = false,
   onSelectInspect,
-  inspectStart,
-  inspectTarget,
-  inspectSource,
-  onInspectSourceChange,
-  onManualStartChange,
-  onManualTargetChange,
-  fairCouponForWindow,
+  inspectNonce,
+  fairCouponForNonce,
+  caRows = [],
+  avgDistributionUsd,
   rpcEndpoint,
   onDeskActivity,
+  deskRefreshKey = 0,
+  onTxConfirmed,
   onRedeemPt,
   onRedeemYt,
   part = "all",
@@ -100,16 +114,34 @@ export function StripInspectPanel({
   const [cumLoading, setCumLoading] = useState(false);
   const [vaultTick, setVaultTick] = useState(0);
 
-  const phase = windowPhase(tipNonce, inspectStart, inspectTarget);
-  const fairCoupon = fairCouponForWindow(inspectStart, inspectTarget);
-  const curvePreview = useMemo(
-    () => buildYtStripCurve(fairCoupon),
-    [fairCoupon]
-  );
+  useEffect(() => {
+    setVaultTick((t) => t + 1);
+  }, [deskRefreshKey]);
 
-  const activeRow = legHoldings.find(
-    (r) => r.startNonce === inspectStart && r.targetNonce === inspectTarget
+  const phase = seriesPhase(tipNonce, inspectNonce);
+  const fairCoupon = fairCouponForNonce(inspectNonce);
+  const curvePreview = useMemo(
+    () =>
+      previewYtStripCurve(
+        fairCoupon,
+        avgDistributionUsd ?? undefined
+      ),
+    [fairCoupon, avgDistributionUsd]
   );
+  const policyPreview = useMemo(() => {
+    if (avgDistributionUsd == null || avgDistributionUsd <= 0) return null;
+    return computeCurvePolicy({
+      avgDistributionUsd,
+      fairCoupon,
+    });
+  }, [avgDistributionUsd, fairCoupon]);
+  const canRequestPool =
+    marketDataReady &&
+    avgDistributionUsd != null &&
+    avgDistributionUsd > 0;
+  const poolLive = Boolean(verifiedLaunch);
+
+  const activeRow = legHoldings.find((r) => r.yieldNonce === inspectNonce);
 
   const rates = legRates(cumStart, cumTarget);
   const ptRedeemRaw = redeemOutputRaw(
@@ -125,49 +157,37 @@ export function StripInspectPanel({
     false
   );
 
-  const portfolioRows = legHoldings.filter(
-    (r) => r.seriesExists && (r.ptRaw > 0n || r.ytRaw > 0n)
+  const portfolioRows = legHoldings
+    .filter((r) => r.seriesExists && (r.ptRaw > 0n || r.ytRaw > 0n))
+    .sort((a, b) => b.yieldNonce - a.yieldNonce);
+
+  const maturitySchedule = useMemo(
+    () => buildYieldNonceMaturityMap(caRows),
+    [caRows]
   );
 
-  const currentSplitKey = splitKey(inspectStart, inspectTarget);
-  const hasCurrentInPortfolio = portfolioRows.some(
-    (r) => splitKey(r.startNonce, r.targetNonce) === currentSplitKey
-  );
-  const selectValue =
-    inspectSource === "manual" || !hasCurrentInPortfolio
-      ? MANUAL_SELECT
-      : currentSplitKey;
+  const maturityLabel = (nonce: number) =>
+    formatNonceMaturityLabel(
+      tipNonce,
+      nonce,
+      maturityForYieldNonce(maturitySchedule, nonce)
+    );
 
   useEffect(() => {
     let cancelled = false;
-    setCumLoading(true);
-    (async () => {
+    const loadCumYs = async (showLoading: boolean) => {
+      if (!shouldPollLiveState()) return;
+      if (showLoading) setCumLoading(true);
       try {
         const underlying = new PublicKey(mint);
-        const programId = new PublicKey(DIVSTRIP_PROGRAM_ID);
-        const marketKey = PublicKey.findProgramAddressSync(
-          [Buffer.from("strip"), underlying.toBuffer()],
-          programId
-        )[0];
-        const startBuf = Buffer.alloc(4);
-        startBuf.writeUInt32LE(inspectStart);
-        const targetBuf = Buffer.alloc(4);
-        targetBuf.writeUInt32LE(inspectTarget);
-        const series = PublicKey.findProgramAddressSync(
-          [
-            Buffer.from("series"),
-            marketKey.toBuffer(),
-            startBuf,
-            targetBuf,
-          ],
-          programId
-        )[0];
+        const marketKey = marketPda(underlying);
+        const series = seriesPda(marketKey, inspectNonce);
         const seriesInfo = await connection.getAccountInfo(series);
         const cums = await fetchWindowCumYs(
           connection,
           underlying,
-          inspectStart,
-          inspectTarget,
+          inspectNonce,
+          inspectNonce + 1,
           seriesInfo?.data ?? null
         );
         if (!cancelled) {
@@ -180,24 +200,25 @@ export function StripInspectPanel({
           setCumTarget(MULTIPLIER_SCALE);
         }
       } finally {
-        if (!cancelled) setCumLoading(false);
+        if (!cancelled && showLoading) setCumLoading(false);
       }
-    })();
+    };
+
+    void loadCumYs(true);
+    const id = window.setInterval(
+      () => void loadCumYs(false),
+      DESK_LIVE_POLL_MS
+    );
+    const onVisible = () => {
+      if (shouldPollLiveState()) void loadCumYs(false);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [connection, mint, inspectStart, inspectTarget]);
-
-  const onWindowSelect = (value: string) => {
-    if (value === MANUAL_SELECT) {
-      onInspectSourceChange("manual");
-      return;
-    }
-    const [start, target] = value.split(":").map(Number);
-    if (Number.isFinite(start) && Number.isFinite(target)) {
-      onSelectInspect(start, target);
-    }
-  };
+  }, [connection, mint, inspectNonce, deskRefreshKey]);
 
   const coreColumn = (
     <div className="desk-primary-inspect" aria-labelledby="inspect-heading">
@@ -206,129 +227,116 @@ export function StripInspectPanel({
           2
         </span>
         <div>
-          <h2 id="inspect-heading">Inspect position</h2>
+          <h2 id="inspect-heading">Your positions</h2>
         </div>
       </header>
 
       <div className="desk-card-body desk-inspect-body">
         <div className="desk-block desk-block-compact">
           {legsLoading ? (
-            <p className="hint">Loading splits…</p>
-          ) : (
-            <>
-              <select
-                className="desk-select mono desk-select-full"
-                aria-label="Choose split window"
-                value={selectValue}
-                onChange={(e) => onWindowSelect(e.target.value)}
-              >
-                  {portfolioRows.length === 0 ? (
-                    <option value={MANUAL_SELECT}>Custom range…</option>
-                  ) : (
-                    <>
-                      {portfolioRows.map((row) => (
-                        <option
-                          key={splitKey(row.startNonce, row.targetNonce)}
-                          value={splitKey(row.startNonce, row.targetNonce)}
-                        >
-                          n{row.startNonce}→n{row.targetNonce} · PT {row.ptAmount}{" "}
-                          · YT {row.ytAmount}
-                        </option>
-                      ))}
-                      <option value={MANUAL_SELECT}>Custom range…</option>
-                    </>
-                  )}
-              </select>
+            <div
+              className="desk-skeleton inspect-positions-skeleton"
+              aria-label="Loading positions"
+            />
+          ) : portfolioRows.length > 0 ? (
+            <ul className="inspect-positions-list" aria-label="Your strip positions">
+              {portfolioRows.map((row) => {
+                const rowPhase = seriesPhase(tipNonce, row.yieldNonce);
+                const dateLabel = maturityLabel(row.yieldNonce);
+                const selected = row.yieldNonce === inspectNonce;
+                return (
+                  <li key={row.yieldNonce}>
+                    <button
+                      type="button"
+                      className={`inspect-position-row${selected ? " selected" : ""}`}
+                      aria-pressed={selected}
+                      onClick={() => onSelectInspect(row.yieldNonce)}
+                    >
+                      <span className="inspect-position-main">
+                        <span className="inspect-position-nonce mono">
+                          {formatYieldNonceWindowLabel(
+                            row.yieldNonce,
+                            maturitySchedule
+                          )}
+                        </span>
+                        <LegStatusBadge phase={rowPhase} />
+                      </span>
+                      <span className="inspect-position-meta mono">
+                        PT {row.ptAmount} · YT {row.ytAmount}
+                        {dateLabel ? ` · ${dateLabel}` : ""}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
 
-              {inspectSource === "manual" && (
-                <div className="inspect-manual-row">
-                  <label className="desk-field desk-field-inline">
-                    <span className="desk-field-label">Start nonce</span>
-                    <input
-                      className="desk-input mono"
-                      type="number"
-                      min={0}
-                      value={inspectStart}
-                      onChange={(e) =>
-                        onManualStartChange(Number(e.target.value) || 0)
-                      }
-                    />
-                  </label>
-                  <label className="desk-field desk-field-inline">
-                    <span className="desk-field-label">Maturity nonce</span>
-                    <input
-                      className="desk-input mono"
-                      type="number"
-                      min={inspectStart + 1}
-                      value={inspectTarget}
-                      onChange={(e) =>
-                        onManualTargetChange(
-                          Math.max(inspectStart + 1, Number(e.target.value) || 0)
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-              )}
-            </>
-          )}
-
-          <div className="inspect-window-summary">
-            <span className="inspect-window-range mono">
-              n{inspectStart} → n{inspectTarget}
-            </span>
-            <LegStatusBadge phase={phase} />
-            {activeRow ? (
-              <span className="inspect-holdings mono">
-                PT {activeRow.ptAmount} · YT {activeRow.ytAmount}
+          <div className="inspect-econ-slot">
+            <div className="inspect-econ-head">
+              <span className="inspect-window-range mono">
+                {formatYieldNonceWindowLabel(inspectNonce, maturitySchedule)}
               </span>
+              <LegStatusBadge phase={phase} />
+              {activeRow ? (
+                <span className="inspect-holdings mono">
+                  PT {activeRow.ptAmount} · YT {activeRow.ytAmount}
+                </span>
+              ) : null}
+            </div>
+            {cumLoading ? (
+              <dl
+                className="inspect-econ-strip inspect-econ-strip-skeleton"
+                aria-label="Loading rates"
+              >
+                {[0, 1, 2].map((i) => (
+                  <div key={i}>
+                    <dt aria-hidden>&nbsp;</dt>
+                    <dd className="desk-skeleton desk-skeleton-metric" aria-hidden />
+                  </div>
+                ))}
+              </dl>
             ) : (
-              <span className="hint inspect-no-position">No position</span>
+              <dl className="inspect-econ-strip">
+                <div>
+                  <dt>Capital (PT)</dt>
+                  <dd className="mono">{(rates.ptShare * 100).toFixed(2)}%</dd>
+                </div>
+                <div>
+                  <dt>Coupon (YT)</dt>
+                  <dd className="mono">{(rates.ytShare * 100).toFixed(2)}%</dd>
+                </div>
+                <div>
+                  <dt>Fair coupon</dt>
+                  <dd className="mono">
+                    {(
+                      (couponFromCum(cumStart, cumTarget) || fairCoupon) *
+                      100
+                    ).toFixed(2)}
+                    %
+                  </dd>
+                </div>
+                {phase === "mature" && activeRow ? (
+                  <>
+                    <div>
+                      <dt>PT redeem</dt>
+                      <dd className="mono">
+                        {formatRawAmount(ptRedeemRaw, underlyingDecimals)}{" "}
+                        {symbol}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>YT redeem</dt>
+                      <dd className="mono">
+                        {formatRawAmount(ytRedeemRaw, underlyingDecimals)}{" "}
+                        {symbol}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
+              </dl>
             )}
           </div>
-
-          {cumLoading ? (
-            <p className="hint">Loading rates…</p>
-          ) : (
-            <dl className="inspect-econ-strip">
-              <div>
-                <dt>Capital (PT)</dt>
-                <dd className="mono">{(rates.ptShare * 100).toFixed(2)}%</dd>
-              </div>
-              <div>
-                <dt>Coupon (YT)</dt>
-                <dd className="mono">{(rates.ytShare * 100).toFixed(2)}%</dd>
-              </div>
-              <div>
-                <dt>Fair coupon</dt>
-                <dd className="mono">
-                  {(
-                    (couponFromCum(cumStart, cumTarget) || fairCoupon) *
-                    100
-                  ).toFixed(2)}
-                  %
-                </dd>
-              </div>
-              {phase === "mature" && activeRow ? (
-                <>
-                  <div>
-                    <dt>PT redeem</dt>
-                    <dd className="mono">
-                      {formatRawAmount(ptRedeemRaw, underlyingDecimals)}{" "}
-                      {symbol}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>YT redeem</dt>
-                    <dd className="mono">
-                      {formatRawAmount(ytRedeemRaw, underlyingDecimals)}{" "}
-                      {symbol}
-                    </dd>
-                  </div>
-                </>
-              ) : null}
-            </dl>
-          )}
 
           {activeRow?.seriesExists && phase === "mature" ? (
             <div className="inspect-actions">
@@ -340,11 +348,7 @@ export function StripInspectPanel({
                     className="btn btn-ghost btn-sm inspect-action-btn"
                     disabled={busy || !onRedeemPt}
                     onClick={() =>
-                      onRedeemPt?.(
-                        inspectStart,
-                        inspectTarget,
-                        activeRow.ptRaw
-                      )
+                      onRedeemPt?.(inspectNonce, activeRow.ptRaw)
                     }
                   >
                     Redeem PT →{" "}
@@ -357,11 +361,7 @@ export function StripInspectPanel({
                     className="btn btn-ghost btn-sm inspect-action-btn"
                     disabled={busy || !onRedeemYt}
                     onClick={() =>
-                      onRedeemYt?.(
-                        inspectStart,
-                        inspectTarget,
-                        activeRow.ytRaw
-                      )
+                      onRedeemYt?.(inspectNonce, activeRow.ytRaw)
                     }
                   >
                     Redeem YT →{" "}
@@ -383,96 +383,135 @@ export function StripInspectPanel({
   );
 
   const marketBand = (
-    <div className="desk-market-row" aria-labelledby="market-heading">
-      <h3 id="market-heading" className="desk-market-title">
-        curve-YT market · Meteora DBC
-      </h3>
-      <p className="hint desk-market-sub">
-        Trade <strong>curve-YT</strong> with USDC — separate from{" "}
-        <strong>strip YT</strong> in your wallet after a split.
-      </p>
+    <section className="desk-market-row" aria-labelledby="market-heading">
+      <header className="desk-card-head">
+        <span className="desk-card-step" aria-hidden>
+          3
+        </span>
+        <div>
+          <h2 id="market-heading">curve-YT market · Meteora DBC</h2>
+        </div>
+      </header>
+      <div className="desk-market-body">
       <div className="inspect-market-grid">
+        <div className="inspect-curve-stack">
+          <CurvePolicyBand
+            compact
+            placeholder={!poolLive}
+            avgDistributionUsd={poolLive ? avgDistributionUsd : undefined}
+            fairCoupon={fairCoupon}
+            initialMcap={verifiedLaunch?.initialMarketCap}
+            migrationMcap={verifiedLaunch?.migrationMarketCap}
+            progressPct={
+              poolLive && poolProgress
+                ? poolProgress.quoteProgress * 100
+                : null
+            }
+            isMigrated={poolLive ? (poolProgress?.isMigrated ?? false) : false}
+          />
           <DbcCurveChart
             compact
+            placeholder={!poolLive}
             fairCoupon={fairCoupon}
-            initialMcap={curvePreview.initialMarketCap}
-            migrationMcap={curvePreview.migrationMarketCap}
+            avgDistributionUsd={poolLive ? avgDistributionUsd : undefined}
+            fairMarketCapUsd={
+              poolLive ? (policyPreview?.fairMarketCapUsd ?? null) : null
+            }
+            initialMcap={
+              verifiedLaunch?.initialMarketCap ?? curvePreview.initialMarketCap
+            }
+            migrationMcap={
+              verifiedLaunch?.migrationMarketCap ??
+              curvePreview.migrationMarketCap
+            }
             progressPct={
-              poolProgress ? poolProgress.quoteProgress * 100 : null
+              poolLive && poolProgress
+                ? poolProgress.quoteProgress * 100
+                : null
             }
           />
-          <div className="inspect-meteora">
-            {verifiedLaunch ? (
-              <DbcPoolPanel
-                connection={connection}
-                rpcEndpoint={rpcEndpoint}
-                pool={verifiedLaunch.pool}
-                symbol={symbol}
-                startNonce={verifiedLaunch.startNonce}
-                targetNonce={verifiedLaunch.targetNonce}
-                underlyingMint={mint}
-                baseMint={verifiedLaunch.baseMint}
-                quoteMint={verifiedLaunch.quoteMint}
-                vaultRefreshKey={vaultTick}
-                onActivityLogged={onDeskActivity}
-                onVaultRefresh={() => setVaultTick((t) => t + 1)}
-              />
-            ) : (
-              <div className="inspect-meteora-empty">
+        </div>
+        <div className="inspect-meteora">
+          {verifiedLaunch ? (
+            <DbcPoolPanel
+              key={`${symbol}-${verifiedLaunch.pool}`}
+              connection={connection}
+              rpcEndpoint={rpcEndpoint}
+              pool={verifiedLaunch.pool}
+              symbol={symbol}
+              yieldNonce={launchYieldNonce(verifiedLaunch)}
+              underlyingMint={mint}
+              baseMint={verifiedLaunch.baseMint}
+              quoteMint={verifiedLaunch.quoteMint}
+              vaultRefreshKey={vaultTick}
+              onActivityLogged={onDeskActivity}
+              onVaultRefresh={() => setVaultTick((t) => t + 1)}
+              onTxConfirmed={onTxConfirmed}
+            />
+          ) : (
+            <div className="inspect-meteora-empty">
+              <p className="hint">
+                No curve-YT pool for{" "}
+                {curveYtNonceLabel(symbol, inspectNonce)}.
+              </p>
+              <p className="hint curve-yt-empty-note">{CURVE_YT_CALLOUT}</p>
+              {launchRegisteredOnChain ? (
                 <p className="hint">
-                  No curve-YT pool for{" "}
-                  {curveYtWindowLabel(symbol, inspectStart, inspectTarget)}.
+                  Pool registered on-chain — refresh or check Surfpool if the
+                  desk panel is empty.
                 </p>
-                <p className="hint curve-yt-empty-note">{CURVE_YT_CALLOUT}</p>
-                {launchRegisteredOnChain ? (
-                  <p className="hint">
-                    Pool registered on-chain — refresh or check Surfpool if the
-                    desk panel is empty.
+              ) : null}
+              <div className="inspect-meteora-actions">
+                {marketDataReady && !canRequestPool ? (
+                  <p className="hint curve-yt-launch-block">
+                    Launch requires xStocks <strong>CashDividend</strong> history
+                    to price the curve (avg $/share). Try another symbol or wait
+                    for dividend data.
                   </p>
                 ) : null}
-                <div className="inspect-meteora-actions">
-                  {onRequestPool ? (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      disabled={busy}
-                      onClick={onRequestPool}
-                      type="button"
-                    >
-                      {busy ? "Launching…" : "Request curve-YT pool"}
-                    </button>
-                  ) : null}
-                  <p className="hint inspect-meteora-auth-hint">
-                    Backend → CRE HTTP trigger → Meteora DBC + on-chain
-                    registration. Requires launch-backend and CRE simulate
-                    --listen.
-                  </p>
-                </div>
+                {onRequestPool ? (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={busy || !canRequestPool}
+                    onClick={onRequestPool}
+                    type="button"
+                  >
+                    {busy ? "Launching…" : "Request curve-YT pool"}
+                  </button>
+                ) : null}
+                <p className="hint inspect-meteora-auth-hint">
+                  Pool launch (server): Meteora DBC + register + curve-YT vault.
+                  Requires ca_registry seeded by ./scripts/deploy-surfpool.sh.
+                </p>
               </div>
-            )}
+            </div>
+          )}
+        </div>
+      </div>
+        {verifiedLaunch ? (
+          <div className="desk-curve-vault-wrap">
+            <h4 className="desk-lifecycle-title">Exit strip YT → USDC</h4>
+            <CurveYtVaultPanel
+              key={`${symbol}-${verifiedLaunch.pool}-vault`}
+              connection={connection}
+              rpcEndpoint={rpcEndpoint}
+              pool={verifiedLaunch.pool}
+              curveYtMint={verifiedLaunch.baseMint}
+              symbol={symbol}
+              yieldNonce={launchYieldNonce(verifiedLaunch)}
+              underlyingMint={mint}
+              stripYtRaw={activeRow?.ytRaw ?? 0n}
+              fairCoupon={fairCoupon}
+              launchFairCoupon={verifiedLaunch.fairCoupon}
+              vaultRefreshKey={vaultTick}
+              onVaultRefresh={() => setVaultTick((t) => t + 1)}
+              onActivityLogged={onDeskActivity}
+              onTxConfirmed={onTxConfirmed}
+            />
           </div>
-        </div>
-      {verifiedLaunch ? (
-        <div className="desk-curve-vault-wrap">
-          <h4 className="desk-lifecycle-title">Exit strip YT → USDC</h4>
-          <CurveYtVaultPanel
-            connection={connection}
-            rpcEndpoint={rpcEndpoint}
-            pool={verifiedLaunch.pool}
-            curveYtMint={verifiedLaunch.baseMint}
-            symbol={symbol}
-            startNonce={verifiedLaunch.startNonce}
-            targetNonce={verifiedLaunch.targetNonce}
-            underlyingMint={mint}
-            stripYtRaw={activeRow?.ytRaw ?? 0n}
-            fairCoupon={fairCoupon}
-            launchFairCoupon={verifiedLaunch.fairCoupon}
-                vaultRefreshKey={vaultTick}
-                onVaultRefresh={() => setVaultTick((t) => t + 1)}
-            onActivityLogged={onDeskActivity}
-          />
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </section>
   );
 
   if (part === "core") return coreColumn;

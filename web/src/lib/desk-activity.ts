@@ -1,5 +1,8 @@
-import { loadLaunches } from "./meteora-dbc";
-import { loadStripPositions } from "./strip-positions";
+import { launchYieldNonce, loadLaunches } from "./meteora-dbc";
+import {
+  loadStripPositions,
+  positionYieldNonce,
+} from "./strip-positions";
 
 const ACTIVITY_KEY = "divstrip.desk.activity.v1";
 
@@ -18,8 +21,10 @@ export type DeskActivity = {
   id: string;
   kind: DeskActivityKind;
   symbol: string;
-  startNonce: number;
-  targetNonce: number;
+  yieldNonce: number;
+  /** @deprecated Legacy window activities — use yieldNonce (start). */
+  startNonce?: number;
+  targetNonce?: number;
   at: number;
   signature: string;
   /** Human amount for splits / redeems / swaps */
@@ -32,15 +37,24 @@ export type DeskActivity = {
   quoteMint?: string;
 };
 
+export function activityYieldNonce(a: DeskActivity): number {
+  return a.yieldNonce ?? a.startNonce ?? 0;
+}
+
 function activityId(kind: DeskActivityKind, signature: string) {
   return `${kind}:${signature}`;
 }
 
 export function loadDeskActivities(): DeskActivity[] {
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(ACTIVITY_KEY);
     if (raw) {
-      return JSON.parse(raw) as DeskActivity[];
+      const parsed = JSON.parse(raw) as DeskActivity[];
+      return parsed.map((a) => ({
+        ...a,
+        yieldNonce: activityYieldNonce(a),
+      }));
     }
   } catch {
     /* fall through to migration */
@@ -57,10 +71,12 @@ function migrateLegacyActivity(): DeskActivity[] {
     const id = activityId("split", p.signature);
     if (seen.has(id)) continue;
     seen.add(id);
+    const nonce = positionYieldNonce(p);
     merged.push({
       id,
       kind: "split",
       symbol: p.symbol,
+      yieldNonce: nonce,
       startNonce: p.startNonce,
       targetNonce: p.targetNonce,
       at: p.splitAt,
@@ -75,10 +91,12 @@ function migrateLegacyActivity(): DeskActivity[] {
     const id = activityId("dbc_launch", sig);
     if (seen.has(id)) continue;
     seen.add(id);
+    const nonce = launchYieldNonce(l);
     merged.push({
       id,
       kind: "dbc_launch",
       symbol: l.symbol,
+      yieldNonce: nonce,
       startNonce: l.startNonce,
       targetNonce: l.targetNonce,
       at: l.launchedAt,
@@ -97,11 +115,18 @@ function migrateLegacyActivity(): DeskActivity[] {
 }
 
 export function appendDeskActivity(
-  entry: Omit<DeskActivity, "id"> & { id?: string }
+  entry: Omit<DeskActivity, "id" | "yieldNonce"> & {
+    id?: string;
+    yieldNonce?: number;
+    startNonce?: number;
+    targetNonce?: number;
+  }
 ) {
+  const nonce =
+    entry.yieldNonce ?? entry.startNonce ?? activityYieldNonce(entry as DeskActivity);
   const id = entry.id ?? activityId(entry.kind, entry.signature || `${entry.at}`);
   const all = loadDeskActivities().filter((a) => a.id !== id);
-  all.unshift({ ...entry, id });
+  all.unshift({ ...entry, yieldNonce: nonce, id });
   localStorage.setItem(ACTIVITY_KEY, JSON.stringify(all.slice(0, 80)));
 }
 

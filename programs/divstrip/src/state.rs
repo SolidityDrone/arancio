@@ -12,11 +12,11 @@ pub const MAX_SYMBOL_LEN: usize = 8;
 pub const SHARE_DECIMALS: u8 = 6;
 pub const COUPON_SCALE: u128 = 1_000_000_000_000;
 
-/// CRE WriteReport payload: after a Yield CA sync, request a YT window launch.
+/// CRE WriteReport payload: request curve-YT launch for a single yield nonce.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct LaunchYtReport {
     pub mint: Pubkey,
-    pub lock_nonces: u32,
+    pub yield_nonce: u32,
 }
 
 #[account]
@@ -26,7 +26,8 @@ pub struct StripMarket {
     pub registry: Pubkey,
     pub symbol: [u8; MAX_SYMBOL_LEN],
     pub symbol_len: u8,
-    pub default_lock_nonces: u32,
+    /// Max nonces ahead of tip that users may open (e.g. tip=3 → open up to 3+8).
+    pub max_forward_nonces: u32,
     pub bump: u8,
     pub vault_bump: u8,
 }
@@ -35,29 +36,28 @@ impl StripMarket {
     pub const SPACE: usize = 8 + 32 + 32 + 32 + MAX_SYMBOL_LEN + 1 + 4 + 1 + 1;
 }
 
+/// One strip series per dividend yield nonce (covers coupon step `nonce → nonce+1`).
 #[account]
 pub struct StripSeries {
     pub market: Pubkey,
     pub underlying_mint: Pubkey,
-    pub start_nonce: u32,
-    pub target_nonce: u32,
+    pub yield_nonce: u32,
     pub pt_mint: Pubkey,
     pub yt_mint: Pubkey,
     pub cum_y_start: u64,
-    /// Frozen at series creation from registry tip (updated on first wrap if 0 events).
+    /// Frozen at series creation from registry (0 for forward nonces until redeem).
     pub bump: u8,
 }
 
 impl StripSeries {
-    pub const SPACE: usize = 8 + 32 + 32 + 4 + 4 + 32 + 32 + 8 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 4 + 32 + 32 + 8 + 1;
 }
 
-/// Curve-YT vault: links a strip series to its Meteora curve-YT mint; vault ATAs hold escrow liquidity for strip exits.
+/// Curve-YT vault: links a strip series to its Meteora curve-YT mint.
 #[account]
 pub struct CurveYtBridge {
     pub series: Pubkey,
     pub curve_yt_mint: Pubkey,
-    /// liquid-curve-YT receipt mint (1:1 with curve-YT in vault).
     pub lc_yt_mint: Pubkey,
     pub bump: u8,
 }
@@ -66,14 +66,13 @@ impl CurveYtBridge {
     pub const SPACE: usize = 8 + 32 + 32 + 32 + 1;
 }
 
-/// Canonical Meteora curve-YT pool registered for a strip series window.
+/// Canonical Meteora curve-YT pool registered for a strip series (single nonce).
 #[account]
 pub struct CurveWindowLaunch {
     pub series: Pubkey,
     pub curve_yt_mint: Pubkey,
     pub pool: Pubkey,
     pub launch_cum_y: u64,
-    /// Fair coupon at registration in parts-per-million (2% = 20_000).
     pub launch_fair_ppm: u32,
     pub initial_mcap_usd: u64,
     pub migration_mcap_usd: u64,

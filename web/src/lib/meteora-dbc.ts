@@ -9,10 +9,11 @@ import {
   TokenAuthorityOption,
   TokenDecimal,
   TokenType,
-  buildCurveWithMarketCap,
+  buildCurveWithLiquidityWeights,
   deriveDbcPoolAddress,
 } from "@meteora-ag/dynamic-bonding-curve-sdk";
 import { computeCurvePolicy } from "./curve-policy";
+import { stripLiquidityWeights } from "./dbc-curve-shape";
 
 /** Native SOL wrapped mint — gas only; DBC quote leg uses USDC. */
 export const WSOL_MINT = new PublicKey(
@@ -33,12 +34,22 @@ export const DBC_PROGRAM_ID = new PublicKey(
   "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN"
 );
 
-export type StripWindow = {
+/** Meteora liquidity-weight curves need a small leftover buffer (≈0.05% supply). */
+export const STRIP_DBC_LEFTOVER = 50;
+
+export type StripLaunchContext = {
   symbol: string;
-  startNonce: number;
-  targetNonce: number;
-  /** Fair coupon in [0, 1] from registry: 1 - Ys/Yt */
+  yieldNonce: number;
+  /** Fair coupon in [0, 1] for on-chain register_curve_launch. */
   fairCoupon: number;
+  /** Mean historical cash dividend (USD per share) for DBC pricing. */
+  avgDistributionUsd?: number;
+};
+
+/** @deprecated Use StripLaunchContext */
+export type StripWindow = StripLaunchContext & {
+  startNonce?: number;
+  targetNonce?: number;
 };
 
 export type LaunchYtResult = {
@@ -48,36 +59,60 @@ export type LaunchYtResult = {
   quoteMint: PublicKey;
   initialMarketCap: number;
   migrationMarketCap: number;
-  transaction: Transaction;
-  /** Must co-sign createConfigAndPool */
-  signers: Keypair[];
+  /** Meteora createConfig — must land before createPoolTx. */
+  createConfigTx: Transaction;
+  /** Meteora createPool — kept separate (combined tx exceeds 1232-byte limit). */
+  createPoolTx: Transaction;
+  /** Signs createConfigTx only. */
+  configKeypair: Keypair;
+  /** Signs createPoolTx only (new curve-YT mint). */
+  baseMintKeypair: Keypair;
 };
 
+export async function refreshTransactionBlockhash(
+  connection: Connection,
+  transaction: Transaction,
+  feePayer: PublicKey
+): Promise<Transaction> {
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
+  transaction.recentBlockhash = blockhash;
+  transaction.lastValidBlockHeight = lastValidBlockHeight;
+  transaction.feePayer = feePayer;
+  return transaction;
+}
+
+/** DAMM v2 config for MigrationFeeOption.FixedBps100 (matches pool migration fee). */
+export const DEFAULT_DAMM_V2_CONFIG = new PublicKey(
+  "Hv8Lmzmnju6m7kcokVKvwqz7QPmdX9XfKjJsXz8RXcjp"
+);
+
 /**
- * Equity-strip curve: seed initial mcap from fair coupon (income notional),
- * migrate to DAMM v2 once discovery clears ~10× that level.
+ * Equity-strip curve: ~60%→80% of fair mcap, concave (fast early, flat late).
+ * Uses Meteora liquidity weights — not a linear mcap ramp.
  */
 export function buildYtStripCurve(
   fairCoupon: number,
-  lockNonces = 7,
-  refNotionalUsd?: number
+  avgDistributionUsd?: number,
+  startingPriceRatio?: number
 ) {
   const policy = computeCurvePolicy({
     fairCoupon,
-    lockNonces,
-    refNotionalUsd,
+    avgDistributionUsd: avgDistributionUsd ?? 1,
+    startingPriceRatio,
   });
   const initialMarketCap = policy.initialMarketCapUsd;
   const migrationMarketCap = policy.migrationMarketCapUsd;
+  const liquidityWeights = stripLiquidityWeights();
 
-  const configParams = buildCurveWithMarketCap({
+  const configParams = buildCurveWithLiquidityWeights({
     token: {
       tokenType: TokenType.SPLToken,
       tokenBaseDecimal: TokenDecimal.SIX,
       tokenQuoteDecimal: TokenDecimal.SIX,
       tokenAuthorityOption: TokenAuthorityOption.Immutable,
       totalTokenSupply: policy.totalTokenSupply,
-      leftover: 0,
+      leftover: STRIP_DBC_LEFTOVER,
     },
     fee: {
       baseFeeParams: {
@@ -120,45 +155,53 @@ export function buildYtStripCurve(
     activationType: ActivationType.Timestamp,
     initialMarketCap,
     migrationMarketCap,
+    liquidityWeights,
   });
 
-  return { configParams, initialMarketCap, migrationMarketCap, policy };
+  return {
+    configParams,
+    initialMarketCap,
+    migrationMarketCap,
+    policy,
+    liquidityWeights,
+  };
 }
 
 export async function buildLaunchYtOnDbc(args: {
   connection: Connection;
   payer: PublicKey;
-  window: StripWindow;
+  launch: StripLaunchContext;
   quoteMint?: PublicKey;
 }): Promise<LaunchYtResult> {
   const quoteMint = args.quoteMint ?? DEFAULT_QUOTE_MINT;
-  const lockNonces = args.window.targetNonce - args.window.startNonce;
+  const ctx = args.launch;
   const { configParams, initialMarketCap, migrationMarketCap } =
-    buildYtStripCurve(args.window.fairCoupon, lockNonces);
+    buildYtStripCurve(ctx.fairCoupon, ctx.avgDistributionUsd);
 
   const config = Keypair.generate();
   const baseMint = Keypair.generate();
   const client = DynamicBondingCurveClient.create(args.connection, "confirmed");
 
-  const name = `${args.window.symbol} Yield ${args.window.startNonce}-${args.window.targetNonce}`;
-  const symbol = `YT${args.window.symbol}${args.window.startNonce}`.slice(0, 10);
-  const uri = `https://xstocks.fi/assets/${encodeURIComponent(args.window.symbol)}`;
+  const name = `${ctx.symbol} Yield n${ctx.yieldNonce}`;
+  const symbol = `YT${ctx.symbol}${ctx.yieldNonce}`.slice(0, 10);
+  const uri = `https://xstocks.fi/assets/${encodeURIComponent(ctx.symbol)}`;
 
-  const transaction = await client.partner.createConfigAndPool({
-    ...configParams,
-    config: config.publicKey,
-    feeClaimer: args.payer,
-    leftoverReceiver: args.payer,
-    quoteMint,
-    payer: args.payer,
-    preCreatePoolParam: {
-      name,
-      symbol,
-      uri,
-      poolCreator: args.payer,
-      baseMint: baseMint.publicKey,
-    },
-  });
+  const { createConfigTx, createPoolWithFirstBuyTx: createPoolTx } =
+    await client.partner.createConfigAndPoolWithFirstBuy({
+      ...configParams,
+      config: config.publicKey,
+      feeClaimer: args.payer,
+      leftoverReceiver: args.payer,
+      quoteMint,
+      payer: args.payer,
+      preCreatePoolParam: {
+        name,
+        symbol,
+        uri,
+        poolCreator: args.payer,
+        baseMint: baseMint.publicKey,
+      },
+    });
 
   const pool = deriveDbcPoolAddress(
     quoteMint,
@@ -166,12 +209,8 @@ export async function buildLaunchYtOnDbc(args: {
     config.publicKey
   );
 
-  // Ensure recent blockhash for wallet send
-  const { blockhash, lastValidBlockHeight } =
-    await args.connection.getLatestBlockhash("confirmed");
-  transaction.recentBlockhash = blockhash;
-  transaction.lastValidBlockHeight = lastValidBlockHeight;
-  transaction.feePayer = args.payer;
+  await refreshTransactionBlockhash(args.connection, createConfigTx, args.payer);
+  await refreshTransactionBlockhash(args.connection, createPoolTx, args.payer);
 
   return {
     config: config.publicKey,
@@ -180,8 +219,10 @@ export async function buildLaunchYtOnDbc(args: {
     quoteMint,
     initialMarketCap,
     migrationMarketCap,
-    transaction,
-    signers: [config, baseMint],
+    createConfigTx,
+    createPoolTx,
+    configKeypair: config,
+    baseMintKeypair: baseMint,
   };
 }
 
@@ -230,8 +271,10 @@ const LAUNCH_KEY = "divstrip.meteora.launches.v1";
 
 export type StoredLaunch = {
   symbol: string;
-  startNonce: number;
-  targetNonce: number;
+  yieldNonce: number;
+  /** @deprecated Legacy window launches */
+  startNonce?: number;
+  targetNonce?: number;
   fairCoupon: number;
   config: string;
   pool: string;
@@ -243,24 +286,30 @@ export type StoredLaunch = {
   launchSignature?: string;
 };
 
+export function launchYieldNonce(l: StoredLaunch): number {
+  return l.yieldNonce ?? l.startNonce ?? 0;
+}
+
 export function loadLaunches(): StoredLaunch[] {
+  if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(LAUNCH_KEY) ?? "[]");
+    const raw = JSON.parse(localStorage.getItem(LAUNCH_KEY) ?? "[]") as StoredLaunch[];
+    return raw.map((l) => ({
+      ...l,
+      yieldNonce: launchYieldNonce(l),
+    }));
   } catch {
     return [];
   }
 }
 
 export function saveLaunch(launch: StoredLaunch) {
+  const nonce = launchYieldNonce(launch);
+  const normalized = { ...launch, yieldNonce: nonce };
   const all = loadLaunches().filter(
-    (l) =>
-      !(
-        l.symbol === launch.symbol &&
-        l.startNonce === launch.startNonce &&
-        l.targetNonce === launch.targetNonce
-      )
+    (l) => !(l.symbol === normalized.symbol && launchYieldNonce(l) === nonce)
   );
-  all.unshift(launch);
+  all.unshift(normalized);
   localStorage.setItem(LAUNCH_KEY, JSON.stringify(all.slice(0, 40)));
 }
 

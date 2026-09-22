@@ -10,9 +10,8 @@
     {
       "name": "create_series",
       "docs": [
-        "Create PT/YT mints for window `[start_nonce, target_nonce]`.",
-        "`start_nonce` may be the tip or a future tip (`>= current_yield_nonce`) so",
-        "desks can open forward strips (e.g. tip=4 → window 6→7)."
+        "Create PT/YT mints for a single yield nonce (coupon step `nonce → nonce+1`).",
+        "`yield_nonce` may be the tip or a forward nonce within `max_forward_nonces`."
       ],
       "discriminator": [
         181,
@@ -77,11 +76,7 @@
               },
               {
                 "kind": "arg",
-                "path": "start_nonce"
-              },
-              {
-                "kind": "arg",
-                "path": "target_nonce"
+                "path": "yield_nonce"
               }
             ]
           }
@@ -109,11 +104,7 @@
               },
               {
                 "kind": "arg",
-                "path": "start_nonce"
-              },
-              {
-                "kind": "arg",
-                "path": "target_nonce"
+                "path": "yield_nonce"
               }
             ]
           }
@@ -141,11 +132,7 @@
               },
               {
                 "kind": "arg",
-                "path": "start_nonce"
-              },
-              {
-                "kind": "arg",
-                "path": "target_nonce"
+                "path": "yield_nonce"
               }
             ]
           }
@@ -160,11 +147,7 @@
       ],
       "args": [
         {
-          "name": "start_nonce",
-          "type": "u32"
-        },
-        {
-          "name": "target_nonce",
+          "name": "yield_nonce",
           "type": "u32"
         }
       ]
@@ -235,12 +218,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -456,12 +434,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -796,7 +769,7 @@
           "type": "string"
         },
         {
-          "name": "default_lock_nonces",
+          "name": "max_forward_nonces",
           "type": "u32"
         }
       ]
@@ -805,8 +778,7 @@
       "name": "on_report",
       "docs": [
         "CRE path (optional / unused by xstocks-ca-sync): emit `YtLaunchRequested`",
-        "for `[current_yield_nonce, current + lock_nonces]`. Desk initializes",
-        "Meteora DBC→DAMM directly; this receiver is kept for optional cranks."
+        "for a single yield nonce. Desk initializes Meteora DBC→DAMM directly."
       ],
       "discriminator": [
         214,
@@ -929,12 +901,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -1060,12 +1027,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -1280,12 +1242,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -1412,12 +1369,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -1483,7 +1435,7 @@
     {
       "name": "request_curve_launch",
       "docs": [
-        "Permissionless: request canonical curve-YT pool deployment for a strip window.",
+        "Permissionless: request canonical curve-YT pool deployment for one yield nonce.",
         "Emits `YtLaunchRequested` for CRE log-trigger / launcher workflows."
       ],
       "discriminator": [
@@ -1529,11 +1481,7 @@
       ],
       "args": [
         {
-          "name": "start_nonce",
-          "type": "u32"
-        },
-        {
-          "name": "target_nonce",
+          "name": "yield_nonce",
           "type": "u32"
         }
       ]
@@ -1604,12 +1552,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -1889,12 +1832,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -2174,12 +2112,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -2253,8 +2186,8 @@
     {
       "name": "wrap",
       "docs": [
-        "Escrow underlying and mint PT + YT 1:1 for the series window.",
-        "Allowed while tip is still at or before the series start (spot or forward)."
+        "Escrow underlying and mint PT + YT 1:1 for the series nonce.",
+        "Allowed while tip is still at or before the series yield nonce (spot or forward)."
       ],
       "discriminator": [
         178,
@@ -2322,12 +2255,7 @@
               },
               {
                 "kind": "account",
-                "path": "series.start_nonce",
-                "account": "StripSeries"
-              },
-              {
-                "kind": "account",
-                "path": "series.target_nonce",
+                "path": "series.yield_nonce",
                 "account": "StripSeries"
               }
             ]
@@ -2540,8 +2468,8 @@
     },
     {
       "code": 6001,
-      "name": "InvalidLockNonces",
-      "msg": "lock_nonces must be greater than zero"
+      "name": "InvalidForwardNonces",
+      "msg": "max_forward_nonces must be greater than zero"
     },
     {
       "code": 6002,
@@ -2555,8 +2483,8 @@
     },
     {
       "code": 6004,
-      "name": "WindowNotMature",
-      "msg": "yield window has not matured yet"
+      "name": "NonceNotMature",
+      "msg": "yield nonce has not matured yet"
     },
     {
       "code": 6005,
@@ -2682,7 +2610,7 @@
     {
       "name": "CurveWindowLaunch",
       "docs": [
-        "Canonical Meteora curve-YT pool registered for a strip series window."
+        "Canonical Meteora curve-YT pool registered for a strip series (single nonce)."
       ],
       "type": {
         "kind": "struct",
@@ -2705,9 +2633,6 @@
           },
           {
             "name": "launch_fair_ppm",
-            "docs": [
-              "Fair coupon at registration in parts-per-million (2% = 20_000)."
-            ],
             "type": "u32"
           },
           {
@@ -2732,7 +2657,7 @@
     {
       "name": "CurveYtBridge",
       "docs": [
-        "Curve-YT vault: links a strip series to its Meteora curve-YT mint; vault ATAs hold escrow liquidity for strip exits."
+        "Curve-YT vault: links a strip series to its Meteora curve-YT mint."
       ],
       "type": {
         "kind": "struct",
@@ -2747,9 +2672,6 @@
           },
           {
             "name": "lc_yt_mint",
-            "docs": [
-              "liquid-curve-YT receipt mint (1:1 with curve-YT in vault)."
-            ],
             "type": "pubkey"
           },
           {
@@ -2762,7 +2684,7 @@
     {
       "name": "LaunchYtReport",
       "docs": [
-        "CRE WriteReport payload: after a Yield CA sync, request a YT window launch."
+        "CRE WriteReport payload: request curve-YT launch for a single yield nonce."
       ],
       "type": {
         "kind": "struct",
@@ -2772,7 +2694,7 @@
             "type": "pubkey"
           },
           {
-            "name": "lock_nonces",
+            "name": "yield_nonce",
             "type": "u32"
           }
         ]
@@ -2872,7 +2794,10 @@
             "type": "u8"
           },
           {
-            "name": "default_lock_nonces",
+            "name": "max_forward_nonces",
+            "docs": [
+              "Max nonces ahead of tip that users may open (e.g. tip=3 → open up to 3+8)."
+            ],
             "type": "u32"
           },
           {
@@ -2888,6 +2813,9 @@
     },
     {
       "name": "StripSeries",
+      "docs": [
+        "One strip series per dividend yield nonce (covers coupon step `nonce → nonce+1`)."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -2900,11 +2828,7 @@
             "type": "pubkey"
           },
           {
-            "name": "start_nonce",
-            "type": "u32"
-          },
-          {
-            "name": "target_nonce",
+            "name": "yield_nonce",
             "type": "u32"
           },
           {
@@ -2922,7 +2846,7 @@
           {
             "name": "bump",
             "docs": [
-              "Frozen at series creation from registry tip (updated on first wrap if 0 events)."
+              "Frozen at series creation from registry (0 for forward nonces until redeem)."
             ],
             "type": "u8"
           }
@@ -2942,20 +2866,12 @@
             "type": "pubkey"
           },
           {
-            "name": "start_nonce",
-            "type": "u32"
-          },
-          {
-            "name": "target_nonce",
+            "name": "yield_nonce",
             "type": "u32"
           },
           {
             "name": "cum_y_start",
             "type": "u64"
-          },
-          {
-            "name": "lock_nonces",
-            "type": "u32"
           },
           {
             "name": "report",

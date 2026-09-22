@@ -1,14 +1,14 @@
 import type { StoredLaunch } from "./meteora-dbc";
 
-export const LAUNCH_API_URL =
-  import.meta.env.VITE_LAUNCH_API_URL ?? "http://127.0.0.1:8788";
+/** Empty = same origin `/api/*`. Set only for a remote launch API. */
+export const LAUNCH_API_URL = process.env.NEXT_PUBLIC_LAUNCH_API_URL ?? "";
 
 export type PoolLaunchRequest = {
   mint: string;
   symbol: string;
-  startNonce: number;
-  targetNonce: number;
+  yieldNonce: number;
   fairCoupon: number;
+  avgDistributionUsd?: number;
 };
 
 export type PoolLaunchResponse = {
@@ -20,6 +20,7 @@ export type PoolLaunchResponse = {
   initialMarketCapUsd?: number;
   migrationMarketCapUsd?: number;
   fairCoupon?: number;
+  avgDistributionUsd?: number;
   launchSignature?: string;
   registerSignature?: string;
   error?: string;
@@ -43,6 +44,9 @@ function normalizeCreFields(raw: Record<string, unknown>): PoolLaunchResponse {
       "MigrationMarketCapUsd"
     ) as number | undefined,
     fairCoupon: pick("fairCoupon", "FairCoupon") as number | undefined,
+    avgDistributionUsd: pick("avgDistributionUsd", "AvgDistributionUsd") as
+      | number
+      | undefined,
     launchSignature: pick("launchSignature", "LaunchSignature") as
       | string
       | undefined,
@@ -66,11 +70,12 @@ function unwrapCreBody(body: Record<string, unknown>): PoolLaunchResponse {
   return launch;
 }
 
-/** Ask backend → CRE HTTP trigger → on-chain launch via tx executor. */
+/** Ask Next.js /api/request-pool → policy + on-chain Meteora launch. */
 export async function requestPoolLaunch(
   req: PoolLaunchRequest
 ): Promise<PoolLaunchResponse> {
-  const res = await fetch(`${LAUNCH_API_URL}/api/request-pool`, {
+  const base = LAUNCH_API_URL.replace(/\/$/, "");
+  const res = await fetch(`${base}/api/request-pool`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -93,8 +98,7 @@ export function storedLaunchFromApi(
   if (!res.pool || !res.baseMint) return null;
   return {
     symbol: req.symbol,
-    startNonce: req.startNonce,
-    targetNonce: req.targetNonce,
+    yieldNonce: req.yieldNonce,
     fairCoupon: res.fairCoupon ?? req.fairCoupon,
     config: res.config ?? "",
     pool: res.pool,

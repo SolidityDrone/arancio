@@ -129,28 +129,25 @@ describe("divstrip curve-YT vault", () => {
       .rpc();
 
     const tip = await registry.account.registryLog.fetch(registryPda);
-    const start = tip.currentYieldNonce as number;
-    const target = start + 1;
-    const startBuf = Buffer.alloc(4);
-    startBuf.writeUInt32LE(start);
-    const targetBuf = Buffer.alloc(4);
-    targetBuf.writeUInt32LE(target);
+    const yieldNonce = tip.currentYieldNonce as number;
+    const nonceBuf = Buffer.alloc(4);
+    nonceBuf.writeUInt32LE(yieldNonce);
 
     const series = PublicKey.findProgramAddressSync(
-      [Buffer.from("series"), market.toBuffer(), startBuf, targetBuf],
+      [Buffer.from("series"), market.toBuffer(), nonceBuf],
       DIVSTRIP_ID
     )[0];
     const ptMint = PublicKey.findProgramAddressSync(
-      [Buffer.from("pt-mint"), market.toBuffer(), startBuf, targetBuf],
+      [Buffer.from("pt-mint"), market.toBuffer(), nonceBuf],
       DIVSTRIP_ID
     )[0];
     const ytMint = PublicKey.findProgramAddressSync(
-      [Buffer.from("yt-mint"), market.toBuffer(), startBuf, targetBuf],
+      [Buffer.from("yt-mint"), market.toBuffer(), nonceBuf],
       DIVSTRIP_ID
     )[0];
 
     await divstrip.methods
-      .createSeries(start, target)
+      .createSeries(yieldNonce)
       .accountsPartial({
         payer: wallet.publicKey,
         market,
@@ -444,28 +441,25 @@ describe("divstrip curve-YT vault", () => {
       .rpc();
 
     const tip = await registry.account.registryLog.fetch(registryPda);
-    const start = tip.currentYieldNonce as number;
-    const target = start + 1;
-    const startBuf = Buffer.alloc(4);
-    startBuf.writeUInt32LE(start);
-    const targetBuf = Buffer.alloc(4);
-    targetBuf.writeUInt32LE(target);
+    const yieldNonce = tip.currentYieldNonce as number;
+    const nonceBuf = Buffer.alloc(4);
+    nonceBuf.writeUInt32LE(yieldNonce);
 
     const series = PublicKey.findProgramAddressSync(
-      [Buffer.from("series"), market.toBuffer(), startBuf, targetBuf],
+      [Buffer.from("series"), market.toBuffer(), nonceBuf],
       DIVSTRIP_ID
     )[0];
     const ptMint = PublicKey.findProgramAddressSync(
-      [Buffer.from("pt-mint"), market.toBuffer(), startBuf, targetBuf],
+      [Buffer.from("pt-mint"), market.toBuffer(), nonceBuf],
       DIVSTRIP_ID
     )[0];
     const ytMint = PublicKey.findProgramAddressSync(
-      [Buffer.from("yt-mint"), market.toBuffer(), startBuf, targetBuf],
+      [Buffer.from("yt-mint"), market.toBuffer(), nonceBuf],
       DIVSTRIP_ID
     )[0];
 
     await divstrip.methods
-      .createSeries(start, target)
+      .createSeries(yieldNonce)
       .accountsPartial({
         payer: wallet.publicKey,
         market,

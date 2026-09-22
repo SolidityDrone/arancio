@@ -13,52 +13,49 @@ import {
 } from "@solana/spl-token";
 import idl from "./divstrip.json";
 import { DIVSTRIP_PROGRAM_ID } from "./markets";
-import { registryPda } from "./seed-registry";
+import { registryPda } from "./registry-pda";
 
 const PROGRAM_ID = new PublicKey(DIVSTRIP_PROGRAM_ID);
 
-export type StripWindow = {
+/** One strip series per dividend yield nonce (coupon step `k → k+1`). */
+export type StripSeriesRef = {
   underlyingMint: PublicKey;
-  startNonce: number;
-  targetNonce: number;
+  yieldNonce: number;
 };
 
-function marketPda(mint: PublicKey) {
+/** @deprecated Use StripSeriesRef — kept for incremental migration. */
+export type StripWindow = StripSeriesRef;
+
+function nonceBuf(n: number) {
+  const buf = Buffer.alloc(4);
+  buf.writeUInt32LE(n);
+  return buf;
+}
+
+export function marketPda(mint: PublicKey) {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("strip"), mint.toBuffer()],
     PROGRAM_ID
   )[0];
 }
 
-function seriesPda(market: PublicKey, start: number, target: number) {
-  const startBuf = Buffer.alloc(4);
-  startBuf.writeUInt32LE(start);
-  const targetBuf = Buffer.alloc(4);
-  targetBuf.writeUInt32LE(target);
+export function seriesPda(market: PublicKey, yieldNonce: number) {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("series"), market.toBuffer(), startBuf, targetBuf],
+    [Buffer.from("series"), market.toBuffer(), nonceBuf(yieldNonce)],
     PROGRAM_ID
   )[0];
 }
 
-function ptMintPda(market: PublicKey, start: number, target: number) {
-  const startBuf = Buffer.alloc(4);
-  startBuf.writeUInt32LE(start);
-  const targetBuf = Buffer.alloc(4);
-  targetBuf.writeUInt32LE(target);
+export function ptMintPda(market: PublicKey, yieldNonce: number) {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("pt-mint"), market.toBuffer(), startBuf, targetBuf],
+    [Buffer.from("pt-mint"), market.toBuffer(), nonceBuf(yieldNonce)],
     PROGRAM_ID
   )[0];
 }
 
-function ytMintPda(market: PublicKey, start: number, target: number) {
-  const startBuf = Buffer.alloc(4);
-  startBuf.writeUInt32LE(start);
-  const targetBuf = Buffer.alloc(4);
-  targetBuf.writeUInt32LE(target);
+export function ytMintPda(market: PublicKey, yieldNonce: number) {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("yt-mint"), market.toBuffer(), startBuf, targetBuf],
+    [Buffer.from("yt-mint"), market.toBuffer(), nonceBuf(yieldNonce)],
     PROGRAM_ID
   )[0];
 }
@@ -70,15 +67,15 @@ function vaultAuthority(market: PublicKey) {
   )[0];
 }
 
-function stripAccounts(wallet: PublicKey, window: StripWindow) {
-  const market = marketPda(window.underlyingMint);
-  const series = seriesPda(market, window.startNonce, window.targetNonce);
-  const ptMint = ptMintPda(market, window.startNonce, window.targetNonce);
-  const ytMint = ytMintPda(market, window.startNonce, window.targetNonce);
+function stripAccounts(wallet: PublicKey, series: StripSeriesRef) {
+  const market = marketPda(series.underlyingMint);
+  const seriesPdaKey = seriesPda(market, series.yieldNonce);
+  const ptMint = ptMintPda(market, series.yieldNonce);
+  const ytMint = ytMintPda(market, series.yieldNonce);
   const vaultAuth = vaultAuthority(market);
   const token2022 = TOKEN_2022_PROGRAM_ID;
   const userUnderlying = getAssociatedTokenAddressSync(
-    window.underlyingMint,
+    series.underlyingMint,
     wallet,
     false,
     token2022
@@ -96,15 +93,15 @@ function stripAccounts(wallet: PublicKey, window: StripWindow) {
     TOKEN_PROGRAM_ID
   );
   const vaultUnderlying = getAssociatedTokenAddressSync(
-    window.underlyingMint,
+    series.underlyingMint,
     vaultAuth,
     true,
     token2022
   );
-  const registry = registryPda(window.underlyingMint);
+  const registry = registryPda(series.underlyingMint);
   return {
     market,
-    series,
+    series: seriesPdaKey,
     ptMint,
     ytMint,
     vaultAuth,
@@ -144,18 +141,18 @@ function underlyingAtaIx(
 export async function buildUnwrapTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  series: StripSeriesRef,
   amountRaw: bigint
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const a = stripAccounts(wallet, window);
+  const a = stripAccounts(wallet, series);
   return program.methods
     .unwrap(new BN(amountRaw.toString()))
     .accountsPartial({
       user: wallet,
       market: a.market,
       series: a.series,
-      underlyingMint: window.underlyingMint,
+      underlyingMint: series.underlyingMint,
       ptMint: a.ptMint,
       ytMint: a.ytMint,
       userUnderlying: a.userUnderlying,
@@ -168,20 +165,20 @@ export async function buildUnwrapTransaction(
       ytTokenProgram: TOKEN_PROGRAM_ID,
     })
     .preInstructions([
-      underlyingAtaIx(wallet, window.underlyingMint, a.userUnderlying),
+      underlyingAtaIx(wallet, series.underlyingMint, a.userUnderlying),
     ])
     .transaction();
 }
 
-/** Mature window: burn PT for capital share of underlying. */
+/** Mature nonce: burn PT for capital share of underlying. */
 export async function buildRedeemCapitalTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  series: StripSeriesRef,
   amountRaw: bigint
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const a = stripAccounts(wallet, window);
+  const a = stripAccounts(wallet, series);
   return program.methods
     .redeemCapital(new BN(amountRaw.toString()))
     .accountsPartial({
@@ -189,7 +186,7 @@ export async function buildRedeemCapitalTransaction(
       market: a.market,
       registry: a.registry,
       series: a.series,
-      underlyingMint: window.underlyingMint,
+      underlyingMint: series.underlyingMint,
       legMint: a.ptMint,
       userLeg: a.userPt,
       userUnderlying: a.userUnderlying,
@@ -199,20 +196,20 @@ export async function buildRedeemCapitalTransaction(
       legTokenProgram: TOKEN_PROGRAM_ID,
     })
     .preInstructions([
-      underlyingAtaIx(wallet, window.underlyingMint, a.userUnderlying),
+      underlyingAtaIx(wallet, series.underlyingMint, a.userUnderlying),
     ])
     .transaction();
 }
 
-/** Mature window: burn YT for coupon share of underlying. */
+/** Mature nonce: burn YT for coupon share of underlying. */
 export async function buildRedeemYieldTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  series: StripSeriesRef,
   amountRaw: bigint
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const a = stripAccounts(wallet, window);
+  const a = stripAccounts(wallet, series);
   return program.methods
     .redeemYield(new BN(amountRaw.toString()))
     .accountsPartial({
@@ -220,7 +217,7 @@ export async function buildRedeemYieldTransaction(
       market: a.market,
       registry: a.registry,
       series: a.series,
-      underlyingMint: window.underlyingMint,
+      underlyingMint: series.underlyingMint,
       legMint: a.ytMint,
       userLeg: a.userYt,
       userUnderlying: a.userUnderlying,
@@ -230,7 +227,7 @@ export async function buildRedeemYieldTransaction(
       legTokenProgram: TOKEN_PROGRAM_ID,
     })
     .preInstructions([
-      underlyingAtaIx(wallet, window.underlyingMint, a.userUnderlying),
+      underlyingAtaIx(wallet, series.underlyingMint, a.userUnderlying),
     ])
     .transaction();
 }

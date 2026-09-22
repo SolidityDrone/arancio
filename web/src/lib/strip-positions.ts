@@ -2,31 +2,41 @@ const POSITIONS_KEY = "divstrip.strip.positions.v1";
 
 export type StoredStripPosition = {
   symbol: string;
-  startNonce: number;
-  targetNonce: number;
+  yieldNonce: number;
+  /** @deprecated Legacy window positions — use yieldNonce (start). */
+  startNonce?: number;
+  targetNonce?: number;
   splitAt: number;
   signature?: string;
   amount?: string;
 };
 
+export function positionYieldNonce(p: StoredStripPosition): number {
+  return p.yieldNonce ?? p.startNonce ?? 0;
+}
+
 export function loadStripPositions(): StoredStripPosition[] {
+  if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(POSITIONS_KEY) ?? "[]");
+    const raw = JSON.parse(
+      localStorage.getItem(POSITIONS_KEY) ?? "[]"
+    ) as StoredStripPosition[];
+    return raw.map((p) => ({ ...p, yieldNonce: positionYieldNonce(p) }));
   } catch {
     return [];
   }
 }
 
 export function saveStripPosition(position: StoredStripPosition) {
+  const nonce = positionYieldNonce(position);
+  const normalized = { ...position, yieldNonce: nonce };
   const all = loadStripPositions().filter(
     (p) =>
       !(
-        p.symbol === position.symbol &&
-        p.startNonce === position.startNonce &&
-        p.targetNonce === position.targetNonce
+        p.symbol === normalized.symbol && positionYieldNonce(p) === nonce
       )
   );
-  all.unshift(position);
+  all.unshift(normalized);
   localStorage.setItem(POSITIONS_KEY, JSON.stringify(all.slice(0, 60)));
 }
 

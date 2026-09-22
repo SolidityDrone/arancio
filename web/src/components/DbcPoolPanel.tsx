@@ -19,31 +19,34 @@ import { formatTxError } from "../lib/tx-error";
 import { formatSimHint } from "../lib/tx-preview";
 import {
   CURVE_YT_CALLOUT,
+  curveYtNonceLabel,
   curveYtTicker,
-  curveYtWindowLabel,
   lcYtTicker,
 } from "../lib/curve-yt-labels";
 import {
-  buildPrepareAndInitVaultTransaction,
   buildVaultBuyTransaction,
   buildVaultSellTransaction,
   fetchCurveYtVaultState,
   fetchCurveYtVaultStateForWallet,
 } from "../lib/strip-vault-tx";
-import type { StripWindow } from "../lib/strip-tx";
+import type { StripSeriesRef } from "../lib/strip-tx";
+import {
+  DESK_LIVE_POLL_MS,
+  shouldPollLiveState,
+} from "../lib/live-poll";
 
 type Props = {
   connection: Connection;
   rpcEndpoint: string;
   pool: string;
   symbol: string;
-  startNonce: number;
-  targetNonce: number;
+  yieldNonce: number;
   underlyingMint: string;
   baseMint: string;
   quoteMint?: string;
   onActivityLogged?: () => void;
   onVaultRefresh?: () => void;
+  onTxConfirmed?: () => void | Promise<void>;
   vaultRefreshKey?: number;
 };
 
@@ -52,28 +55,27 @@ export function DbcPoolPanel({
   rpcEndpoint,
   pool,
   symbol,
-  startNonce,
-  targetNonce,
+  yieldNonce,
   underlyingMint,
   baseMint,
   quoteMint,
   onActivityLogged,
   onVaultRefresh,
+  onTxConfirmed,
   vaultRefreshKey = 0,
 }: Props) {
   const curveTicker = curveYtTicker(symbol);
   const lcTicker = lcYtTicker(symbol);
-  const curveLabel = curveYtWindowLabel(symbol, startNonce, targetNonce);
+  const curveLabel = curveYtNonceLabel(symbol, yieldNonce);
   const wallet = useWallet();
   const local = isLocalRpc(rpcEndpoint);
 
-  const stripWindow = useMemo<StripWindow>(
+  const seriesRef = useMemo<StripSeriesRef>(
     () => ({
       underlyingMint: new PublicKey(underlyingMint),
-      startNonce,
-      targetNonce,
+      yieldNonce,
     }),
-    [underlyingMint, startNonce, targetNonce]
+    [underlyingMint, yieldNonce]
   );
 
   const [snapshot, setSnapshot] = useState<DbcPoolSnapshot | null>(null);
@@ -100,8 +102,13 @@ export function DbcPoolPanel({
   }, [connection, pool]);
 
   useEffect(() => {
+    setSnapshot(null);
+    setLoading(true);
+    setQuote(null);
+    setQuoteError(null);
+    setStatus(null);
     void refresh();
-  }, [refresh]);
+  }, [refresh, pool, symbol]);
 
   const quoteMintPk = useMemo(
     () => new PublicKey(quoteMint ?? DEFAULT_QUOTE_MINT.toBase58()),
@@ -110,7 +117,7 @@ export function DbcPoolPanel({
 
   const refreshVault = useCallback(async () => {
     const curveMint = new PublicKey(baseMint);
-    const base = await fetchCurveYtVaultState(connection, stripWindow, curveMint);
+    const base = await fetchCurveYtVaultState(connection, seriesRef, curveMint);
     setVaultReady(base.initialized);
     setVaultExists(base.vaultExists);
     setCurveMintMatch(base.curveMintMatch);
@@ -125,7 +132,7 @@ export function DbcPoolPanel({
         const ws = await fetchCurveYtVaultStateForWallet(
           connection,
           wallet.publicKey,
-          stripWindow,
+          seriesRef,
           curveMint
         );
         setLcYtRaw(ws.walletLcYtRaw);
@@ -136,11 +143,30 @@ export function DbcPoolPanel({
       setUsdcUi(null);
       setLcYtRaw(0n);
     }
-  }, [connection, wallet.publicKey, stripWindow, baseMint, quoteMintPk]);
+  }, [connection, wallet.publicKey, seriesRef, baseMint, quoteMintPk]);
 
   useEffect(() => {
     void refreshVault();
   }, [refreshVault, vaultRefreshKey]);
+
+  useEffect(() => {
+    if (!pool) return;
+    const tick = () => {
+      if (!shouldPollLiveState()) return;
+      void refresh();
+      void refreshVault();
+    };
+    tick();
+    const id = window.setInterval(tick, DESK_LIVE_POLL_MS);
+    const onVisible = () => {
+      if (shouldPollLiveState()) tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [pool, refresh, refreshVault]);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,34 +206,6 @@ export function DbcPoolPanel({
     };
   }, [amount, side, connection, pool, snapshot]);
 
-  const runInitVault = async () => {
-    if (!wallet.publicKey || !wallet.sendTransaction) {
-      setStatus("Connect wallet to initialize the vault.");
-      return;
-    }
-    setBusy(true);
-    setStatus("Preparing curve-YT vault (market + series + vault)…");
-    try {
-      const tx = await buildPrepareAndInitVaultTransaction(
-        connection,
-        wallet.publicKey,
-        stripWindow,
-        new PublicKey(baseMint),
-        symbol
-      );
-      const sig = await sendTransactionChecked(connection, tx, wallet, {
-        modalLabel: "init vault",
-      });
-      onVaultRefresh?.();
-      await refreshVault();
-      setStatus(`Vault ready · ${sig.slice(0, 10)}… — you can buy now`);
-    } catch (e) {
-      setStatus(formatTxError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const onSwap = async () => {
     if (!wallet.publicKey || !wallet.sendTransaction || !quote || !snapshot) {
       setStatus("Connect wallet to swap on the local curve.");
@@ -218,7 +216,7 @@ export function DbcPoolPanel({
       return;
     }
     if (!vaultReady) {
-      setStatus("Initialize the curve-YT vault below before bonding.");
+      setStatus("Vault not ready — relaunch the curve-YT pool from the desk.");
       return;
     }
     setBusy(true);
@@ -230,7 +228,7 @@ export function DbcPoolPanel({
         tx = await buildVaultBuyTransaction(
           connection,
           wallet.publicKey,
-          stripWindow,
+          seriesRef,
           new PublicKey(baseMint),
           pool,
           quote
@@ -246,7 +244,7 @@ export function DbcPoolPanel({
         tx = await buildVaultSellTransaction(
           connection,
           wallet.publicKey,
-          stripWindow,
+          seriesRef,
           new PublicKey(baseMint),
           pool,
           sellRaw,
@@ -261,8 +259,7 @@ export function DbcPoolPanel({
       appendDeskActivity({
         kind: "dbc_swap",
         symbol,
-        startNonce,
-        targetNonce,
+        yieldNonce,
         at: Date.now(),
         signature: sig,
         pool,
@@ -280,6 +277,7 @@ export function DbcPoolPanel({
       );
       await refresh();
       await refreshVault();
+      await onTxConfirmed?.();
     } catch (e) {
       setStatus(formatTxError(e));
     } finally {
@@ -303,10 +301,16 @@ export function DbcPoolPanel({
   const inputSymbol = side === "buy" ? QUOTE_SYMBOL : lcTicker;
   const outputSymbol = side === "buy" ? lcTicker : QUOTE_SYMBOL;
   const lcYtUi = formatDbcAmountCompact(lcYtRaw, false);
-  const poolCurveUi = formatDbcAmountCompact(snapshot.baseReserve, false);
-  const poolUsdcUi = formatDbcAmountCompact(snapshot.quoteReserve, true);
+  const poolCurveUi = formatDbcAmountCompact(
+    BigInt(snapshot.baseReserve),
+    false
+  );
+  const poolUsdcUi = formatDbcAmountCompact(
+    BigInt(snapshot.quoteReserve),
+    true
+  );
 
-  const quoteSpotLine =
+  const quoteRate =
     quote && amount.trim()
       ? (() => {
           const inUi = Number(amount.trim());
@@ -317,18 +321,18 @@ export function DbcPoolPanel({
           if (!Number.isFinite(inUi) || inUi <= 0 || outUi <= 0) return null;
           const usdcPerLc =
             side === "buy" ? inUi / outUi : outUi / inUi;
-          return `~${usdcPerLc.toFixed(6)} ${QUOTE_SYMBOL} per ${lcTicker}`;
+          return `~${usdcPerLc.toFixed(4)} ${QUOTE_SYMBOL}/${lcTicker}`;
         })()
       : null;
 
-  const swapBlockedReason = !wallet.publicKey
-    ? "Connect wallet to buy via vault."
+  const swapHint = !wallet.publicKey
+    ? "Connect wallet"
     : vaultExists && !curveMintMatch
-      ? "Curve-YT vault on this window uses a different curve-YT mint — reset Surfpool or relaunch the pool."
+      ? "Vault mint mismatch — relaunch pool"
       : !vaultReady
-        ? "Initialize the vault first (button below)."
+        ? "Vault not ready — launch (or relaunch) the pool from the desk"
         : !quote
-          ? quoteError ?? "Waiting for swap quote…"
+          ? quoteError ?? null
           : null;
 
   return (
@@ -366,23 +370,6 @@ export function DbcPoolPanel({
           </dd>
         </div>
       </dl>
-
-      {!vaultReady && !snapshot.isMigrated ? (
-        <div className="dbc-vault-setup">
-          <p className="hint dbc-vault-note">
-            One-time setup: link this pool to the curve-YT vault, then USDC buys
-            mint {lcTicker} 1:1.
-          </p>
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            disabled={busy || !wallet.publicKey || (vaultExists && !curveMintMatch)}
-            onClick={() => void runInitVault()}
-          >
-            {busy ? "Setting up…" : "Initialize vault for this pool"}
-          </button>
-        </div>
-      ) : null}
 
       {snapshot.isMigrated ? (
         <div className="dbc-pool-migrated">
@@ -423,77 +410,66 @@ export function DbcPoolPanel({
             <span className="desk-field-label">
               Amount ({inputSymbol})
             </span>
-            <div className="dbc-swap-input-row">
-              <input
-                className="desk-input mono dbc-swap-input"
-                type="text"
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder={side === "buy" ? "0.01" : "100"}
-                aria-label={`Swap amount in ${inputSymbol}`}
-              />
-              <button
-                type="button"
-                className="btn btn-primary btn-sm dbc-swap-btn"
-                disabled={busy || !quote || !wallet.publicKey || !vaultReady}
-                onClick={onSwap}
-              >
-                {busy
-                  ? "Submitting…"
-                  : side === "buy"
-                    ? `Buy · mint ${lcTicker}`
-                    : `Sell · redeem ${lcTicker}`}
-              </button>
+            <div className="dbc-swap-input-block">
+              <div className="dbc-swap-input-row">
+                <input
+                  className="desk-input mono dbc-swap-input"
+                  type="text"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder={side === "buy" ? "0.01" : "100"}
+                  aria-label={`Swap amount in ${inputSymbol}`}
+                />
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm dbc-swap-btn"
+                  disabled={busy || !quote || !wallet.publicKey || !vaultReady}
+                  onClick={onSwap}
+                >
+                  {busy
+                    ? "Submitting…"
+                    : side === "buy"
+                      ? `Buy · mint ${lcTicker}`
+                      : `Sell · redeem ${lcTicker}`}
+                </button>
+              </div>
+              {wallet.publicKey ? (
+                <span className="dbc-input-balance mono">
+                  {side === "buy"
+                    ? `${usdcUi ?? "…"} ${QUOTE_SYMBOL}`
+                    : `${lcYtUi} ${lcTicker}`}
+                </span>
+              ) : null}
             </div>
-            {wallet.publicKey ? (
-              <p className="hint dbc-wallet-balances">
-                Your {QUOTE_SYMBOL}:{" "}
-                <span className="mono">{usdcUi ?? "…"}</span>
-                {vaultReady ? (
-                  <>
-                    {" · "}
-                    Your {lcTicker}:{" "}
-                    <span className="mono">{lcYtUi}</span>
-                  </>
-                ) : null}
-              </p>
-            ) : null}
-            {quote ? (
-              <>
-                <p className="hint dbc-swap-quote">
-                  ≈{" "}
+            {quote && vaultReady ? (
+              <p
+                className="hint dbc-swap-quote-compact"
+                title={
+                  side === "buy" && progressPct < 25
+                    ? "Early bonding: large lcYT counts per USDC are normal on Meteora DBC."
+                    : undefined
+                }
+              >
+                ≈{" "}
+                {formatDbcAmountCompact(
+                  quote.outputAmount,
+                  side === "sell"
+                )}{" "}
+                {outputSymbol}
+                <span className="dbc-swap-min">
+                  {" "}
+                  (min{" "}
                   {formatDbcAmountCompact(
-                    quote.outputAmount,
+                    quote.minimumAmountOut,
                     side === "sell"
-                  )}{" "}
-                  {outputSymbol}
-                  <span className="dbc-swap-min">
-                    {" "}
-                    (min{" "}
-                    {formatDbcAmountCompact(
-                      quote.minimumAmountOut,
-                      side === "sell"
-                    )}
-                    )
-                  </span>
-                </p>
-                {quoteSpotLine ? (
-                  <p className="hint dbc-swap-spot">{quoteSpotLine}</p>
-                ) : null}
-                {side === "buy" && progressPct < 25 ? (
-                  <p className="hint dbc-swap-curve-note">
-                    Early bonding ({progressPct}% filled): the curve mints many{" "}
-                    {lcTicker} per {QUOTE_SYMBOL}. Counts look huge but track
-                    Meteora&apos;s 1B curve-YT supply — not a wallet bug.
-                  </p>
-                ) : null}
-              </>
-            ) : quoteError ? (
-              <p className="hint dbc-swap-quote">{quoteError}</p>
-            ) : null}
-            {swapBlockedReason && !busy ? (
-              <p className="hint dbc-swap-blocked">{swapBlockedReason}</p>
+                  )}
+                  )
+                </span>
+                {quoteRate ? <> · {quoteRate}</> : null}
+              </p>
+            ) : swapHint && !busy ? (
+              <p className="hint dbc-swap-hint">{swapHint}</p>
             ) : null}
           </div>
         </>

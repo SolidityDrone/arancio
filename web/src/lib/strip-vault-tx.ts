@@ -9,14 +9,21 @@ import {
 } from "@solana/spl-token";
 import idl from "./divstrip.json";
 import { DIVSTRIP_PROGRAM_ID } from "./markets";
-import { registryPda } from "./seed-registry";
+import { REGISTRY_MISSING_HINT, registryPda } from "./registry-pda";
 import {
   buildDbcSwapTransaction,
   type DbcSwapQuote,
 } from "./dbc-pool-desk";
-import type { StripWindow } from "./strip-tx";
+import {
+  ptMintPda,
+  seriesPda,
+  ytMintPda,
+  type StripSeriesRef,
+  type StripWindow,
+} from "./strip-tx";
 
 const PROGRAM_ID = new PublicKey(DIVSTRIP_PROGRAM_ID);
+const DEFAULT_MAX_FORWARD = 8;
 
 function marketPda(mint: PublicKey) {
   return PublicKey.findProgramAddressSync(
@@ -25,42 +32,9 @@ function marketPda(mint: PublicKey) {
   )[0];
 }
 
-function seriesPda(market: PublicKey, start: number, target: number) {
-  const startBuf = Buffer.alloc(4);
-  startBuf.writeUInt32LE(start);
-  const targetBuf = Buffer.alloc(4);
-  targetBuf.writeUInt32LE(target);
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("series"), market.toBuffer(), startBuf, targetBuf],
-    PROGRAM_ID
-  )[0];
-}
-
-function ptMintPda(market: PublicKey, start: number, target: number) {
-  const startBuf = Buffer.alloc(4);
-  startBuf.writeUInt32LE(start);
-  const targetBuf = Buffer.alloc(4);
-  targetBuf.writeUInt32LE(target);
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("pt-mint"), market.toBuffer(), startBuf, targetBuf],
-    PROGRAM_ID
-  )[0];
-}
-
 function vaultAuthority(market: PublicKey) {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("vault"), market.toBuffer()],
-    PROGRAM_ID
-  )[0];
-}
-
-function ytMintPda(market: PublicKey, start: number, target: number) {
-  const startBuf = Buffer.alloc(4);
-  startBuf.writeUInt32LE(start);
-  const targetBuf = Buffer.alloc(4);
-  targetBuf.writeUInt32LE(target);
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("yt-mint"), market.toBuffer(), startBuf, targetBuf],
     PROGRAM_ID
   )[0];
 }
@@ -113,13 +87,13 @@ export type CurveYtVaultState = {
 
 export function curveYtVaultAccounts(
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey
 ) {
-  const market = marketPda(window.underlyingMint);
-  const series = seriesPda(market, window.startNonce, window.targetNonce);
+  const market = marketPda(seriesRef.underlyingMint);
+  const series = seriesPda(market, seriesRef.yieldNonce);
   const vault = curveYtVaultPda(series);
-  const ytMint = ytMintPda(market, window.startNonce, window.targetNonce);
+  const ytMint = ytMintPda(market, seriesRef.yieldNonce);
   const lcYtMint = lcYtMintPda(series);
   const userStripYt = getAssociatedTokenAddressSync(ytMint, wallet);
   const userCurveYt = getAssociatedTokenAddressSync(curveYtMint, wallet);
@@ -171,10 +145,10 @@ export async function fetchStripMarketAuthority(
 
 export async function fetchCurveLaunchState(
   connection: Connection,
-  window: StripWindow
+  seriesRef: StripSeriesRef
 ): Promise<CurveLaunchState> {
-  const market = marketPda(window.underlyingMint);
-  const series = seriesPda(market, window.startNonce, window.targetNonce);
+  const market = marketPda(seriesRef.underlyingMint);
+  const series = seriesPda(market, seriesRef.yieldNonce);
   const launch = curveLaunchPda(series);
   const info = await connection.getAccountInfo(launch);
   if (!info) {
@@ -216,13 +190,13 @@ export async function fetchCurveLaunchState(
 export async function buildRequestCurveLaunchTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow
+  seriesRef: StripSeriesRef
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const market = marketPda(window.underlyingMint);
-  const registry = registryPda(window.underlyingMint);
+  const market = marketPda(seriesRef.underlyingMint);
+  const registry = registryPda(seriesRef.underlyingMint);
   return program.methods
-    .requestCurveLaunch(window.startNonce, window.targetNonce)
+    .requestCurveLaunch(seriesRef.yieldNonce)
     .accountsPartial({
       payer: wallet,
       market,
@@ -234,7 +208,7 @@ export async function buildRequestCurveLaunchTransaction(
 export async function buildRegisterCurveLaunchTransaction(
   connection: Connection,
   registrar: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
   pool: PublicKey,
   launchFairPpm: number,
@@ -242,8 +216,8 @@ export async function buildRegisterCurveLaunchTransaction(
   migrationMcapUsd: number
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const market = marketPda(window.underlyingMint);
-  const series = seriesPda(market, window.startNonce, window.targetNonce);
+  const market = marketPda(seriesRef.underlyingMint);
+  const series = seriesPda(market, seriesRef.yieldNonce);
   const launch = curveLaunchPda(series);
   return program.methods
     .registerCurveLaunch(
@@ -265,11 +239,11 @@ export async function buildRegisterCurveLaunchTransaction(
 
 export async function fetchCurveYtVaultState(
   connection: Connection,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey
 ): Promise<CurveYtVaultState> {
   const wallet = PublicKey.default;
-  const a = curveYtVaultAccounts(wallet, window, curveYtMint);
+  const a = curveYtVaultAccounts(wallet, seriesRef, curveYtMint);
   const info = await connection.getAccountInfo(a.vault);
   if (!info) {
     return {
@@ -328,12 +302,12 @@ export async function fetchCurveYtVaultState(
 export async function fetchCurveYtVaultStateForWallet(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey
 ): Promise<CurveYtVaultState> {
-  const base = await fetchCurveYtVaultState(connection, window, curveYtMint);
+  const base = await fetchCurveYtVaultState(connection, seriesRef, curveYtMint);
   if (!base.initialized) return base;
-  const a = curveYtVaultAccounts(wallet, window, curveYtMint);
+  const a = curveYtVaultAccounts(wallet, seriesRef, curveYtMint);
   let walletLcYtRaw = 0n;
   try {
     const bal = await connection.getTokenAccountBalance(a.userLcYt);
@@ -367,11 +341,11 @@ function sharePreInstructions(
 export async function buildInitCurveVaultTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const a = curveYtVaultAccounts(wallet, window, curveYtMint);
+  const a = curveYtVaultAccounts(wallet, seriesRef, curveYtMint);
   return program.methods
     .initCurveBridge(curveYtMint)
     .accountsPartial({
@@ -394,27 +368,27 @@ export async function buildInitCurveVaultTransaction(
 }
 
 /** Create strip market + series PDAs if missing (required before register_curve_launch). */
-export async function buildEnsureStripWindowTransaction(
+export async function buildEnsureStripSeriesTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
-  marketSymbol: string
+  seriesRef: StripSeriesRef,
+  marketSymbol: string,
+  maxForwardNonces = DEFAULT_MAX_FORWARD
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const market = marketPda(window.underlyingMint);
-  const series = seriesPda(market, window.startNonce, window.targetNonce);
-  const ptMint = ptMintPda(market, window.startNonce, window.targetNonce);
-  const ytMint = ytMintPda(market, window.startNonce, window.targetNonce);
-  const registry = registryPda(window.underlyingMint);
+  const market = marketPda(seriesRef.underlyingMint);
+  const series = seriesPda(market, seriesRef.yieldNonce);
+  const ptMint = ptMintPda(market, seriesRef.yieldNonce);
+  const ytMint = ytMintPda(market, seriesRef.yieldNonce);
+  const registry = registryPda(seriesRef.underlyingMint);
   const vaultAuth = vaultAuthority(market);
-  const lockNonces = window.targetNonce - window.startNonce;
 
   const [marketInfo, seriesInfo, registryInfo] =
     await connection.getMultipleAccountsInfo([market, series, registry]);
 
   if (!registryInfo) {
     throw new Error(
-      "ca_registry missing for this xStock — seed registry before registering the pool."
+      `ca_registry missing for this xStock. ${REGISTRY_MISSING_HINT}`
     );
   }
 
@@ -422,10 +396,10 @@ export async function buildEnsureStripWindowTransaction(
 
   if (!marketInfo) {
     const initMarket = await program.methods
-      .initializeStrip(marketSymbol, lockNonces)
+      .initializeStrip(marketSymbol, maxForwardNonces)
       .accountsPartial({
         authority: wallet,
-        underlyingMint: window.underlyingMint,
+        underlyingMint: seriesRef.underlyingMint,
         registry,
         market,
         vaultAuthority: vaultAuth,
@@ -437,7 +411,7 @@ export async function buildEnsureStripWindowTransaction(
 
   if (!seriesInfo) {
     const createSeries = await program.methods
-      .createSeries(window.startNonce, window.targetNonce)
+      .createSeries(seriesRef.yieldNonce)
       .accountsPartial({
         payer: wallet,
         market,
@@ -455,23 +429,26 @@ export async function buildEnsureStripWindowTransaction(
   return tx;
 }
 
+/** @deprecated Use buildEnsureStripSeriesTransaction */
+export const buildEnsureStripWindowTransaction = buildEnsureStripSeriesTransaction;
+
 /** Create strip market + series if needed, then init curve-YT vault (no split required). */
 export async function buildPrepareAndInitVaultTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
-  marketSymbol: string
+  marketSymbol: string,
+  maxForwardNonces = DEFAULT_MAX_FORWARD
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const market = marketPda(window.underlyingMint);
-  const series = seriesPda(market, window.startNonce, window.targetNonce);
+  const market = marketPda(seriesRef.underlyingMint);
+  const series = seriesPda(market, seriesRef.yieldNonce);
   const vault = curveYtVaultPda(series);
-  const ptMint = ptMintPda(market, window.startNonce, window.targetNonce);
-  const ytMint = ytMintPda(market, window.startNonce, window.targetNonce);
-  const registry = registryPda(window.underlyingMint);
+  const ptMint = ptMintPda(market, seriesRef.yieldNonce);
+  const ytMint = ytMintPda(market, seriesRef.yieldNonce);
+  const registry = registryPda(seriesRef.underlyingMint);
   const vaultAuth = vaultAuthority(market);
-  const lockNonces = window.targetNonce - window.startNonce;
 
   const [marketInfo, seriesInfo, vaultInfo, registryInfo] =
     await connection.getMultipleAccountsInfo([
@@ -483,7 +460,7 @@ export async function buildPrepareAndInitVaultTransaction(
 
   if (!registryInfo) {
     throw new Error(
-      "ca_registry missing for this xStock — seed registry before initializing the vault."
+      `ca_registry missing for this xStock. ${REGISTRY_MISSING_HINT}`
     );
   }
 
@@ -491,10 +468,10 @@ export async function buildPrepareAndInitVaultTransaction(
 
   if (!marketInfo) {
     const initMarket = await program.methods
-      .initializeStrip(marketSymbol, lockNonces)
+      .initializeStrip(marketSymbol, maxForwardNonces)
       .accountsPartial({
         authority: wallet,
-        underlyingMint: window.underlyingMint,
+        underlyingMint: seriesRef.underlyingMint,
         registry,
         market,
         vaultAuthority: vaultAuth,
@@ -506,7 +483,7 @@ export async function buildPrepareAndInitVaultTransaction(
 
   if (!seriesInfo) {
     const createSeries = await program.methods
-      .createSeries(window.startNonce, window.targetNonce)
+      .createSeries(seriesRef.yieldNonce)
       .accountsPartial({
         payer: wallet,
         market,
@@ -526,22 +503,18 @@ export async function buildPrepareAndInitVaultTransaction(
     const decoded = await program.account.curveYtBridge.fetch(vault);
     if (!(decoded.curveYtMint as PublicKey).equals(curveYtMint)) {
       throw new Error(
-        "Curve-YT vault exists for this window but is linked to a different curve-YT mint. " +
-          "Reset Surfpool (:memory: DB) or pick the window that matches your pool launch."
+        "Curve-YT vault exists for this nonce but is linked to a different curve-YT mint. " +
+          "Reset Surfpool (:memory: DB) or pick the nonce that matches your pool launch."
       );
     }
   } else {
     const initTx = await buildInitCurveVaultTransaction(
       connection,
       wallet,
-      window,
+      seriesRef,
       curveYtMint
     );
     tx.add(...initTx.instructions);
-  }
-
-  if (tx.instructions.length === 0) {
-    throw new Error("Curve-YT vault is already initialized for this pool.");
   }
 
   return tx;
@@ -550,12 +523,12 @@ export async function buildPrepareAndInitVaultTransaction(
 export async function buildDepositCurveYtForSharesTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
   curveAmountRaw: bigint
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const a = curveYtVaultAccounts(wallet, window, curveYtMint);
+  const a = curveYtVaultAccounts(wallet, seriesRef, curveYtMint);
   return program.methods
     .depositCurveYtForShares(new BN(curveAmountRaw.toString()))
     .accountsPartial({
@@ -578,12 +551,12 @@ export async function buildDepositCurveYtForSharesTransaction(
 export async function buildRedeemSharesForCurveTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
   curveAmountRaw: bigint
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const a = curveYtVaultAccounts(wallet, window, curveYtMint);
+  const a = curveYtVaultAccounts(wallet, seriesRef, curveYtMint);
   return program.methods
     .redeemSharesForCurveYt(new BN(curveAmountRaw.toString()))
     .accountsPartial({
@@ -607,7 +580,7 @@ export async function buildRedeemSharesForCurveTransaction(
 export async function buildVaultBuyTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
   pool: PublicKey | string,
   buyQuote: DbcSwapQuote
@@ -622,7 +595,7 @@ export async function buildVaultBuyTransaction(
   const depositTx = await buildDepositCurveYtForSharesTransaction(
     connection,
     wallet,
-    window,
+    seriesRef,
     curveYtMint,
     curveOut
   );
@@ -636,7 +609,7 @@ export async function buildVaultBuyTransaction(
 export async function buildVaultSellTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
   pool: PublicKey | string,
   curveAmountRaw: bigint,
@@ -645,7 +618,7 @@ export async function buildVaultSellTransaction(
   const redeemTx = await buildRedeemSharesForCurveTransaction(
     connection,
     wallet,
-    window,
+    seriesRef,
     curveYtMint,
     curveAmountRaw
   );
@@ -664,14 +637,14 @@ export async function buildVaultSellTransaction(
 export async function buildSwapStripForCurveTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
   stripAmountRaw: bigint,
   curveAmountRaw: bigint,
   minCurveOutRaw: bigint
 ): Promise<Transaction> {
   const program = programFor(connection);
-  const a = curveYtVaultAccounts(wallet, window, curveYtMint);
+  const a = curveYtVaultAccounts(wallet, seriesRef, curveYtMint);
   return program.methods
     .swapStripYtForCurveYt(
       new BN(stripAmountRaw.toString()),
@@ -707,7 +680,7 @@ export async function buildSwapStripForCurveTransaction(
 export async function buildStripExitTransaction(
   connection: Connection,
   wallet: PublicKey,
-  window: StripWindow,
+  seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
   pool: PublicKey | string,
   stripAmountRaw: bigint,
@@ -718,7 +691,7 @@ export async function buildStripExitTransaction(
   const swapTx = await buildSwapStripForCurveTransaction(
     connection,
     wallet,
-    window,
+    seriesRef,
     curveYtMint,
     stripAmountRaw,
     curveAmountRaw,

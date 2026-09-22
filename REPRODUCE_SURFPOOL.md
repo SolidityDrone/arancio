@@ -163,7 +163,7 @@ ARANCIO_RPC_URL=http://127.0.0.1:8899 \
 
 ```bash
 yarn web
-# → http://127.0.0.1:5173
+# → http://127.0.0.1:3000
 ```
 
 - `/` — landing (PT/YT explainer + Meteora use case)
@@ -285,7 +285,7 @@ npm --prefix web run build
 In the browser:
 
 1. Connect Phantom on custom RPC `http://127.0.0.1:8899` (or WSL IP).
-2. Open `http://127.0.0.1:5173/app`.
+2. Open `http://127.0.0.1:3000/app`.
 3. Split → approve Phantom popup → status shows tx signature prefix.
 4. Launch YT → second Phantom popup → pool address in UI.
 
@@ -330,7 +330,7 @@ ARANCIO_RPC_URL=http://127.0.0.1:8899 \
 
 # Terminal C
 cd /path/to/orange && yarn web
-# Phantom → custom RPC http://127.0.0.1:8899 → http://127.0.0.1:5173/app
+# Phantom → custom RPC http://127.0.0.1:8899 → http://127.0.0.1:3000/app
 ```
 
 ---

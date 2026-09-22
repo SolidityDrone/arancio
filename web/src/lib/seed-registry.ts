@@ -1,15 +1,17 @@
 import { sha1 } from "@noble/hashes/sha1";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+} from "@solana/web3.js";
 import { Program, AnchorProvider, Wallet } from "@anchor-lang/core";
-import { Connection } from "@solana/web3.js";
 import registryIdl from "./ca_registry.json";
-import { CA_REGISTRY_PROGRAM_ID, MULTIPLIER_SCALE } from "./markets";
+import { MULTIPLIER_SCALE } from "./markets";
+import { MOCK_FORWARDER, registryPda } from "./registry-pda";
 import { fetchCaHistory, type CorporateAction } from "./xstocks-api";
 
-const REGISTRY_PROGRAM = new PublicKey(CA_REGISTRY_PROGRAM_ID);
-const MOCK_FORWARDER = new PublicKey(
-  "jhCjuD4Z3V7HeSUChMRpkRwpw6B9yC63mxDMv8SdLNX"
-);
+export { MOCK_FORWARDER, REGISTRY_MISSING_HINT, registryPda } from "./registry-pda";
 
 const KIND_YIELD = 0;
 const KIND_SUPPLY = 1;
@@ -56,11 +58,33 @@ function caTypeToKind(caType: string): number {
   }
 }
 
-export function registryPda(mint: PublicKey): PublicKey {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("registry"), mint.toBuffer()],
-    REGISTRY_PROGRAM
-  )[0];
+function u32leBytes(n: number): Uint8Array {
+  const buf = new Uint8Array(4);
+  new DataView(buf.buffer).setUint32(0, n, true);
+  return buf;
+}
+
+function i64leBytes(n: number | bigint): Uint8Array {
+  const buf = new Uint8Array(8);
+  new DataView(buf.buffer).setBigInt64(0, BigInt(n), true);
+  return buf;
+}
+
+function u64leBytes(n: bigint): Uint8Array {
+  const buf = new Uint8Array(8);
+  new DataView(buf.buffer).setBigUint64(0, n, true);
+  return buf;
+}
+
+function concatBytes(parts: Uint8Array[]): Buffer {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return Buffer.from(out);
 }
 
 export function encodeSyncPayload(
@@ -74,27 +98,20 @@ export function encodeSyncPayload(
     multiplierNew: bigint;
   }[]
 ): Buffer {
-  const chunks: Buffer[] = [mint.toBuffer()];
-  const count = Buffer.alloc(4);
-  count.writeUInt32LE(events.length);
-  chunks.push(count);
+  const chunks: Uint8Array[] = [mint.toBuffer(), u32leBytes(events.length)];
 
   for (const event of events) {
-    chunks.push(Buffer.from(hashEventId(event.eventId)));
-    chunks.push(Buffer.from([event.caType]));
-    chunks.push(Buffer.from([event.kind]));
-    const effectiveTs = Buffer.alloc(8);
-    effectiveTs.writeBigInt64LE(BigInt(event.effectiveTs));
-    chunks.push(effectiveTs);
-    const multiplierOld = Buffer.alloc(8);
-    multiplierOld.writeBigUInt64LE(event.multiplierOld);
-    chunks.push(multiplierOld);
-    const multiplierNew = Buffer.alloc(8);
-    multiplierNew.writeBigUInt64LE(event.multiplierNew);
-    chunks.push(multiplierNew);
+    chunks.push(
+      hashEventId(event.eventId),
+      Uint8Array.of(event.caType),
+      Uint8Array.of(event.kind),
+      i64leBytes(event.effectiveTs),
+      u64leBytes(event.multiplierOld),
+      u64leBytes(event.multiplierNew)
+    );
   }
 
-  return Buffer.concat(chunks);
+  return concatBytes(chunks);
 }
 
 function toSyncEvents(actions: CorporateAction[]) {
@@ -131,41 +148,62 @@ function toSyncEvents(actions: CorporateAction[]) {
 
 export type SeedProgress = (msg: string) => void;
 
+function readRegistryTip(data: Buffer): {
+  yieldNonce: number;
+  eventCount: number;
+} {
+  return {
+    yieldNonce: data.readUInt32LE(130),
+    eventCount: data.readUInt32LE(134),
+  };
+}
+
 /**
- * Ensure ca_registry exists for mint and is backfilled from xStocks CA history.
- * Uses wallet as registry authority (local Surfpool / desk path).
+ * Init + backfill ca_registry PDA for one xStock mint (deploy key / CRE authority).
+ * Skips when the registry account already exists.
  */
-export async function ensureRegistrySeeded(args: {
+export async function seedRegistryWithAuthority(args: {
   connection: Connection;
-  wallet: Wallet;
+  authority: Keypair;
   symbol: string;
   mint: string;
   onProgress?: SeedProgress;
+  /** When true, only initialize — do not fetch xStocks CA history. */
+  skipSync?: boolean;
 }): Promise<{ registry: PublicKey; yieldNonce: number; eventCount: number }> {
-  const { connection, wallet, symbol, mint, onProgress } = args;
+  const { connection, authority, symbol, mint, onProgress, skipSync } = args;
   const mintPk = new PublicKey(mint);
   const registry = registryPda(mintPk);
-
+  const wallet = new Wallet(authority);
   const provider = new AnchorProvider(connection, wallet, {
     commitment: "confirmed",
   });
   const program = new Program(registryIdl as any, provider);
 
   let info = await connection.getAccountInfo(registry);
-  if (!info) {
-    onProgress?.(`Initializing ca_registry for ${symbol}…`);
-    // Touch mint so Surfpool pulls mainnet account if missing
-    await connection.getAccountInfo(mintPk);
-    await program.methods
-      .initializeRegistry(symbol, MOCK_FORWARDER)
-      .accountsPartial({
-        authority: wallet.publicKey,
-        mint: mintPk,
-        registry,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
-    info = await connection.getAccountInfo(registry);
+  if (info) {
+    const tip = readRegistryTip(info.data);
+    onProgress?.(
+      `${symbol}: registry exists (n${tip.yieldNonce}, ${tip.eventCount} events) — skip`
+    );
+    return { registry, ...tip };
+  }
+
+  onProgress?.(`Initializing ca_registry for ${symbol}…`);
+  await connection.getAccountInfo(mintPk);
+  await program.methods
+    .initializeRegistry(symbol, MOCK_FORWARDER)
+    .accountsPartial({
+      authority: authority.publicKey,
+      mint: mintPk,
+      registry,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+  info = await connection.getAccountInfo(registry);
+
+  if (skipSync) {
+    return { registry, yieldNonce: 0, eventCount: 0 };
   }
 
   onProgress?.(`Fetching ${symbol} corporate-action history…`);
@@ -173,23 +211,22 @@ export async function ensureRegistrySeeded(args: {
   const events = toSyncEvents(history);
   if (events.length === 0) {
     onProgress?.(
-      `No complete CA multipliers for ${symbol} — registry ready at genesis.`
+      `${symbol}: no complete CA multipliers — registry at genesis.`
     );
     return { registry, yieldNonce: 0, eventCount: 0 };
   }
 
-  // sync in chunks of 8 to stay under tx size
   const chunkSize = 8;
   for (let i = 0; i < events.length; i += chunkSize) {
     const chunk = events.slice(i, i + chunkSize);
     onProgress?.(
-      `Syncing CA events ${i + 1}–${Math.min(i + chunkSize, events.length)} / ${events.length}…`
+      `${symbol}: syncing CA ${i + 1}–${Math.min(i + chunkSize, events.length)} / ${events.length}…`
     );
     const payload = encodeSyncPayload(mintPk, chunk);
     await program.methods
       .syncEvents(Buffer.from(payload))
       .accountsPartial({
-        authority: wallet.publicKey,
+        authority: authority.publicKey,
         registry,
       })
       .rpc();
@@ -199,12 +236,5 @@ export async function ensureRegistrySeeded(args: {
   if (!after) {
     throw new Error(`Registry account missing after seed for ${symbol}`);
   }
-  // Layout: disc(8)+mint(32)+auth(32)+fwd(32)+sym(8)+len(1)+bump(1)+cumY(8)+cumS(8)+yieldNonce(4)+eventCount(4)
-  const yieldNonce = after.data.readUInt32LE(130);
-  const eventCount = after.data.readUInt32LE(134);
-  return {
-    registry,
-    yieldNonce,
-    eventCount,
-  };
+  return { registry, ...readRegistryTip(after.data) };
 }

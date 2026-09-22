@@ -15,7 +15,6 @@ import {
 } from "../lib/curve-yt-vault";
 import { CurveYtVaultSummary } from "./CurveYtVaultSummary";
 import {
-  buildPrepareAndInitVaultTransaction,
   buildStripExitTransaction,
   buildSwapStripForCurveTransaction,
 } from "../lib/strip-vault-tx";
@@ -24,7 +23,11 @@ import { sendTransactionChecked } from "../lib/wallet-tx";
 import { formatTxError } from "../lib/tx-error";
 import { curveYtTicker, lcYtTicker } from "../lib/curve-yt-labels";
 import { QUOTE_SYMBOL } from "../lib/meteora-dbc";
-import type { StripWindow } from "../lib/strip-tx";
+import type { StripSeriesRef } from "../lib/strip-tx";
+import {
+  DESK_LIVE_POLL_MS,
+  shouldPollLiveState,
+} from "../lib/live-poll";
 
 type Props = {
   connection: Connection;
@@ -32,14 +35,14 @@ type Props = {
   pool: string;
   curveYtMint: string;
   symbol: string;
-  startNonce: number;
-  targetNonce: number;
+  yieldNonce: number;
   underlyingMint: string;
   stripYtRaw: bigint;
   fairCoupon: number;
   launchFairCoupon: number;
   onActivityLogged?: () => void;
   onVaultRefresh?: () => void;
+  onTxConfirmed?: () => void | Promise<void>;
   vaultRefreshKey?: number;
 };
 
@@ -52,14 +55,14 @@ export function CurveYtVaultPanel({
   pool,
   curveYtMint,
   symbol,
-  startNonce,
-  targetNonce,
+  yieldNonce,
   underlyingMint,
   stripYtRaw,
   fairCoupon,
   launchFairCoupon,
   onActivityLogged,
   onVaultRefresh,
+  onTxConfirmed,
   vaultRefreshKey = 0,
 }: Props) {
   const wallet = useWallet();
@@ -73,13 +76,12 @@ export function CurveYtVaultPanel({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
-  const stripWindow = useMemo<StripWindow>(
+  const seriesRef = useMemo<StripSeriesRef>(
     () => ({
       underlyingMint: new PublicKey(underlyingMint),
-      startNonce,
-      targetNonce,
+      yieldNonce,
     }),
-    [underlyingMint, startNonce, targetNonce]
+    [underlyingMint, yieldNonce]
   );
 
   const exitAmountRaw = parseUiRaw(exitAmountUi);
@@ -89,7 +91,7 @@ export function CurveYtVaultPanel({
       const pk = wallet.publicKey ?? PublicKey.default;
       const m = await fetchCurveYtVaultMetrics(
         connection,
-        stripWindow,
+        seriesRef,
         new PublicKey(curveYtMint),
         pool,
         pk,
@@ -115,7 +117,7 @@ export function CurveYtVaultPanel({
     }
   }, [
     connection,
-    stripWindow,
+    seriesRef,
     curveYtMint,
     pool,
     wallet.publicKey,
@@ -128,8 +130,19 @@ export function CurveYtVaultPanel({
   }, [refreshMetrics, vaultRefreshKey]);
 
   useEffect(() => {
-    const id = globalThis.setInterval(() => void refreshMetrics(), 30_000);
-    return () => globalThis.clearInterval(id);
+    const tick = () => {
+      if (shouldPollLiveState()) void refreshMetrics();
+    };
+    tick();
+    const id = globalThis.setInterval(tick, DESK_LIVE_POLL_MS);
+    const onVisible = () => {
+      if (shouldPollLiveState()) void refreshMetrics();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      globalThis.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [refreshMetrics]);
 
   const refreshQuote = useCallback(async () => {
@@ -158,34 +171,11 @@ export function CurveYtVaultPanel({
     void refreshQuote();
   }, [refreshQuote]);
 
-  const afterTx = () => {
+  const afterTx = async () => {
     onActivityLogged?.();
     onVaultRefresh?.();
-    void refreshMetrics();
-  };
-
-  const runInitVault = async () => {
-    if (!wallet.publicKey) return;
-    setBusy(true);
-    setStatus(null);
-    try {
-      const tx = await buildPrepareAndInitVaultTransaction(
-        connection,
-        wallet.publicKey,
-        stripWindow,
-        new PublicKey(curveYtMint),
-        symbol
-      );
-      const sig = await sendTransactionChecked(connection, tx, wallet, {
-        modalLabel: "init curve-YT vault",
-      });
-      setStatus(`Vault initialized · ${sig.slice(0, 8)}…`);
-      afterTx();
-    } catch (e) {
-      setStatus(formatTxError(e));
-    } finally {
-      setBusy(false);
-    }
+    await refreshMetrics();
+    await onTxConfirmed?.();
   };
 
   const runStripExit = async (andSell: boolean) => {
@@ -207,7 +197,7 @@ export function CurveYtVaultPanel({
         tx = await buildStripExitTransaction(
           connection,
           wallet.publicKey,
-          stripWindow,
+          seriesRef,
           new PublicKey(curveYtMint),
           pool,
           exitAmountRaw,
@@ -219,7 +209,7 @@ export function CurveYtVaultPanel({
         tx = await buildSwapStripForCurveTransaction(
           connection,
           wallet.publicKey,
-          stripWindow,
+          seriesRef,
           new PublicKey(curveYtMint),
           exitAmountRaw,
           BigInt(quote.curveYtOut.toString()),
@@ -232,8 +222,8 @@ export function CurveYtVaultPanel({
       appendDeskActivity({
         kind: "dbc_swap",
         symbol,
-        startNonce,
-        targetNonce,
+        yieldNonce,
+        at: Date.now(),
         signature: sig,
         amount: exitAmountUi,
         swapSide: "sell",
@@ -243,7 +233,7 @@ export function CurveYtVaultPanel({
           ? `Exited to ${QUOTE_SYMBOL} · ${sig.slice(0, 8)}…`
           : `Swapped to ${curveTicker} · ${sig.slice(0, 8)}…`
       );
-      afterTx();
+      await afterTx();
     } catch (e) {
       setStatus(formatTxError(e));
     } finally {
@@ -277,21 +267,15 @@ export function CurveYtVaultPanel({
 
       {metrics?.vaultExists && !metrics.curveMintMatch ? (
         <p className="hint curve-vault-quote-error">
-          Curve-YT vault on this window is linked to a different curve-YT mint.
-          Reset Surfpool or relaunch the pool for window {startNonce}→
-          {targetNonce}.
+          Curve-YT vault on this series is linked to a different curve-YT mint.
+          Reset Surfpool or relaunch the pool for n{yieldNonce}.
         </p>
       ) : null}
 
       {!metrics?.initialized && !metrics?.vaultExists ? (
-        <button
-          className="btn btn-sm btn-ghost"
-          disabled={busy || !wallet.publicKey}
-          onClick={() => void runInitVault()}
-          type="button"
-        >
-          Initialize curve-YT vault
-        </button>
+        <p className="hint curve-vault-empty">
+          Vault is created automatically when you launch the curve-YT pool.
+        </p>
       ) : metrics?.initialized ? (
         <section className="curve-vault-section">
           <h5 className="curve-vault-section-title">
@@ -299,7 +283,7 @@ export function CurveYtVaultPanel({
           </h5>
           {stripYtRaw === 0n ? (
             <p className="hint curve-vault-empty">
-              Split xStock first to mint strip YT for this window.
+              Split xStock first to mint strip YT for n{yieldNonce}.
             </p>
           ) : (
             <>

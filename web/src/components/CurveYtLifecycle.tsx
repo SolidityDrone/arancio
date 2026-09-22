@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import {
   CURVE_YT_LIFECYCLE,
   LIFECYCLE_SUMMARY,
@@ -18,16 +18,16 @@ function PhaseCard({ phase }: { phase: LifecyclePhase }) {
       id={`lifecycle-${phase.id}`}
     >
       <header className="lifecycle-phase-head">
-        <span className="lifecycle-step">{phase.step}</span>
-        <div>
-          <h3>{phase.title}</h3>
-          <p className="lifecycle-venue mono">{phase.venue}</p>
+        <div className="lifecycle-phase-title">
+          <span className="lifecycle-step">{phase.step}</span>
+          <div className="lifecycle-phase-title-text">
+            <h3>{phase.title}</h3>
+            <p className="lifecycle-venue mono">{phase.venue}</p>
+          </div>
         </div>
-        <span
-          className={`lifecycle-badge lifecycle-badge-${phase.status}`}
-        >
-          {phase.status === "live" ? "Live" : "Roadmap"}
-        </span>
+        {phase.status === "roadmap" ? (
+          <span className="lifecycle-badge lifecycle-badge-roadmap">Roadmap</span>
+        ) : null}
       </header>
       <p className="lifecycle-pair mono">{phase.pair}</p>
       <p className="lifecycle-body">{phase.body}</p>
@@ -48,9 +48,11 @@ export function CurveYtLifecycle({
             <li key={p.id}>
               <span className="lifecycle-compact-step">{p.step}</span>
               <span className="mono">{p.pair}</span>
-              <span className={`lifecycle-badge lifecycle-badge-${p.status}`}>
-                {p.status === "live" ? "Live" : "Soon"}
-              </span>
+              {p.status === "roadmap" ? (
+                <span className="lifecycle-badge lifecycle-badge-roadmap">
+                  Roadmap
+                </span>
+              ) : null}
             </li>
           ))}
         </ol>
@@ -59,7 +61,7 @@ export function CurveYtLifecycle({
           <strong>strip YT</strong> — {STRIP_YT_CALLOUT}
         </p>
         {showDeskLink ? (
-          <Link to="/app" className="dashboard-row-link lifecycle-desk-link">
+          <Link href="/app" className="dashboard-row-link lifecycle-desk-link">
             Open strip desk ↗
           </Link>
         ) : null}
@@ -87,8 +89,8 @@ export function CurveYtLifecycle({
       </div>
       {showDeskLink ? (
         <div className="lifecycle-cta">
-          <Link to="/app" className="btn btn-primary">
-            Try phase 1 on the desk →
+          <Link href="/app" className="btn btn-primary">
+            Try it out in the Desk →
           </Link>
         </div>
       ) : null}

@@ -5,37 +5,82 @@ type Props = {
   fairCoupon: number;
   initialMcap: number;
   migrationMcap: number;
+  avgDistributionUsd?: number | null;
+  fairMarketCapUsd?: number | null;
   progressPct?: number | null;
   compact?: boolean;
+  placeholder?: boolean;
 };
 
 export function DbcCurveChart({
   fairCoupon,
   initialMcap,
   migrationMcap,
+  avgDistributionUsd,
+  fairMarketCapUsd,
   progressPct,
   compact = false,
+  placeholder = false,
 }: Props) {
+  const width = compact ? 360 : 420;
+  const height = compact ? 112 : 160;
+
+  if (placeholder) {
+    return (
+      <div className={`dbc-chart dbc-chart-placeholder ${compact ? "dbc-chart-compact" : ""}`}>
+        <div className="dbc-chart-head">
+          <span>Bonding curve (USDC mcap)</span>
+          <span className="mono dbc-chart-head-meta">—</span>
+        </div>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="dbc-chart-svg"
+          role="img"
+          aria-hidden
+        >
+          <rect
+            x={32}
+            y={10}
+            width={width - 42}
+            height={height - 32}
+            className="dbc-chart-placeholder-frame"
+          />
+        </svg>
+      </div>
+    );
+  }
+
   const fillId = useId().replace(/:/g, "");
-  const points = useMemo(() => sampleDbcCurve(fairCoupon, 48), [fairCoupon]);
+  const points = useMemo(
+    () => sampleDbcCurve(fairCoupon, avgDistributionUsd ?? undefined, 48),
+    [fairCoupon, avgDistributionUsd]
+  );
   const clampedProgress =
     progressPct != null
       ? Math.min(100, Math.max(0, progressPct))
       : null;
-  const width = compact ? 360 : 420;
-  const height = compact ? 112 : 160;
   const pad = compact
     ? { l: 32, r: 10, t: 10, b: 22 }
     : { l: 36, r: 12, t: 14, b: 28 };
   const innerW = width - pad.l - pad.r;
   const innerH = height - pad.t - pad.b;
 
-  const maxY = Math.max(migrationMcap * 1.05, ...points.map((p) => p.mcapSol));
+  const fairMcap =
+    fairMarketCapUsd ??
+    (avgDistributionUsd != null && avgDistributionUsd > 0
+      ? Math.round(100_000 * avgDistributionUsd)
+      : null);
+  const maxY = Math.max(
+    fairMcap ?? migrationMcap * 1.05,
+    migrationMcap * 1.05,
+    ...points.map((p) => p.mcapSol)
+  );
   const minY = Math.min(initialMcap * 0.95, ...points.map((p) => p.mcapSol));
 
   const toX = (progress: number) => pad.l + (progress / 100) * innerW;
   const toY = (mcap: number) =>
     pad.t + innerH - ((mcap - minY) / (maxY - minY || 1)) * innerH;
+  const fairY = fairMcap != null ? toY(fairMcap) : null;
 
   const path = points
     .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(p.progress).toFixed(1)} ${toY(p.mcapSol).toFixed(1)}`)
@@ -100,6 +145,25 @@ export function DbcCurveChart({
         ))}
         <path d={fillPath} fill={`url(#${fillId})`} />
         <path d={path} className="dbc-line" fill="none" />
+        {fairY != null && fairMcap != null && fairMcap > migrationMcap ? (
+          <>
+            <line
+              x1={pad.l}
+              y1={fairY}
+              x2={pad.l + innerW}
+              y2={fairY}
+              className="dbc-fair-line"
+            />
+            <text
+              x={pad.l + innerW - 2}
+              y={fairY - 4}
+              textAnchor="end"
+              className="dbc-fair-label"
+            >
+              fair {Math.round(fairMcap).toLocaleString()}
+            </text>
+          </>
+        ) : null}
         {dotX != null && dotY != null && progressLabel ? (
           <>
             <line

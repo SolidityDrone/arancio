@@ -1,18 +1,28 @@
 import { MULTIPLIER_SCALE, SHARE_DECIMALS } from "./markets";
 
-export type WindowPhase = "forward" | "locked" | "mature";
+export type SeriesPhase = "forward" | "locked" | "mature";
 
-export function windowPhase(
-  tipNonce: number,
-  start: number,
-  target: number
-): WindowPhase {
-  if (tipNonce < start) return "forward";
-  if (tipNonce < target) return "locked";
+/** @deprecated Use seriesPhase */
+export type WindowPhase = SeriesPhase;
+
+/** Phase for a single yield nonce (matures when tip >= nonce + 1). */
+export function seriesPhase(tipNonce: number, yieldNonce: number): SeriesPhase {
+  if (tipNonce < yieldNonce) return "forward";
+  if (tipNonce === yieldNonce) return "locked";
   return "mature";
 }
 
-export function phaseLabel(phase: WindowPhase): string {
+/** @deprecated Use seriesPhase */
+export function windowPhase(
+  tipNonce: number,
+  _start: number,
+  target?: number
+): SeriesPhase {
+  const yieldNonce = target != null && target > _start ? _start : _start;
+  return seriesPhase(tipNonce, yieldNonce);
+}
+
+export function phaseLabel(phase: SeriesPhase): string {
   switch (phase) {
     case "forward":
       return "Forward · start not reached";

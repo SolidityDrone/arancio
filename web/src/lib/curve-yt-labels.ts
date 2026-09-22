@@ -13,13 +13,21 @@ export function lcYtTicker(stockSymbol: string): string {
   return `lcYT·${stockSymbol}`;
 }
 
-/** Full window label, e.g. curve-YT · KOx · n0→n2 */
+/** Full nonce label, e.g. curve-YT · KOx · n3 */
+export function curveYtNonceLabel(
+  stockSymbol: string,
+  yieldNonce: number
+): string {
+  return `curve-YT · ${stockSymbol} · n${yieldNonce}`;
+}
+
+/** @deprecated Use curveYtNonceLabel */
 export function curveYtWindowLabel(
   stockSymbol: string,
   start: number,
-  target: number
+  _target?: number
 ): string {
-  return `curve-YT · ${stockSymbol} · n${start}→n${target}`;
+  return curveYtNonceLabel(stockSymbol, start);
 }
 
 export const CURVE_YT_CALLOUT =

@@ -18,7 +18,7 @@ export const CURVE_YT_LIFECYCLE: LifecyclePhase[] = [
     venue: "Meteora DBC",
     pair: "USDC ↔ curve-YT",
     body:
-      "Launch a curve-YT pool for window n→n. Traders pay USDC to buy curve-YT before anyone splits xStock. No LP seed required — the bonding curve discovers a forward yield price.",
+      "Launch a curve-YT pool for a single yield nonce n. Traders pay USDC to buy curve-YT before anyone splits xStock. No LP seed required — the bonding curve discovers a forward yield price.",
     status: "live",
   },
   {
@@ -28,7 +28,7 @@ export const CURVE_YT_LIFECYCLE: LifecyclePhase[] = [
     venue: "Meteora DAMM v2",
     pair: "USDC ↔ curve-YT",
     body:
-      "When enough USDC fills the curve, DBC stops and liquidity graduates to a normal AMM. This is still curve-YT — not strip YT. Graduation and window maturity are different clocks.",
+      "When enough USDC fills the curve, DBC stops and liquidity graduates to a normal AMM. This is still curve-YT — not strip YT. Graduation and nonce maturity are different clocks.",
     status: "live",
   },
   {
@@ -38,7 +38,7 @@ export const CURVE_YT_LIFECYCLE: LifecyclePhase[] = [
     venue: "DivStrip",
     pair: "xStock → strip PT + strip YT",
     body:
-      "Deposit xStock to mint strip PT and strip YT 1:1 for the same window. These are on-chain DivStrip tokens — separate mints from curve-YT.",
+      "Deposit xStock to mint strip PT and strip YT 1:1 for the same yield nonce. These are on-chain DivStrip tokens — separate mints from curve-YT.",
     status: "live",
   },
   {
@@ -48,7 +48,7 @@ export const CURVE_YT_LIFECYCLE: LifecyclePhase[] = [
     venue: "DivStrip curve-YT vault",
     pair: "strip YT → curve-YT → USDC",
     body:
-      "After split, swap strip YT for curve-YT from the vault at the live DBC/DAMM spot (adjusted by fair coupon vs launch). Sell curve-YT on Meteora — that pulls USDC from the pool bonders filled.",
+      "After split, swap strip YT for curve-YT from the vault at the current DBC/DAMM spot (adjusted by fair coupon vs launch). Sell curve-YT on Meteora — that pulls USDC from the pool bonders filled.",
     status: "live",
   },
   {
@@ -58,7 +58,7 @@ export const CURVE_YT_LIFECYCLE: LifecyclePhase[] = [
     venue: "DivStrip",
     pair: "strip PT / strip YT → xStock",
     body:
-      "At window maturity (n_target), redeem strip legs for underlying per frozen coupon from ca_registry. curve-YT may wind down or convert via the vault — maturity is a strip event, not a Meteora event.",
+      "When tip passes nonce n (mature at n+1), redeem strip legs for underlying per frozen coupon from ca_registry. curve-YT may wind down or convert via the vault — maturity is a strip event, not a Meteora event.",
     status: "live",
   },
   {
@@ -74,4 +74,4 @@ export const CURVE_YT_LIFECYCLE: LifecyclePhase[] = [
 ];
 
 export const LIFECYCLE_SUMMARY =
-  "curve-YT prices the window in USDC before splits. strip YT is the real yield leg after split. The curve-YT vault connects them.";
+  "curve-YT prices each yield nonce in USDC before splits. strip YT is the real yield leg after split. The curve-YT vault connects them.";

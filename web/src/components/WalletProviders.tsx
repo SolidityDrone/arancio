@@ -1,3 +1,5 @@
+"use client";
+
 // @ts-nocheck — wallet-adapter FC types clash with React 18/19 @types
 import { useMemo } from "react";
 import {
@@ -28,7 +30,7 @@ export function WalletProviders({ children }: { children: React.ReactNode }) {
           uri:
             typeof window !== "undefined"
               ? window.location.origin
-              : "http://127.0.0.1:5173",
+              : "http://127.0.0.1:3000",
           icon: APP_ICON,
         },
       }),

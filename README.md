@@ -55,7 +55,7 @@ yarn test:anchor
 
 ## DivStrip web desk
 
-Stocklana-styled landing + strip UI at `http://127.0.0.1:5173` (`yarn web`).
+Stocklana-styled landing + strip UI at `http://127.0.0.1:3000` (`yarn web` or `cd web && npm run dev`).
 
 - `/` — PT/YT overview + Meteora DBC→DAMM use case
 - `/app` — Split xStock → PT/YT, then **Launch YT on Meteora DBC** (graduates to DAMM v2)

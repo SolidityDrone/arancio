@@ -14,6 +14,8 @@
 #   ARANCIO_SKIP_BUILD=1     Skip anchor build
 #   ARANCIO_SKIP_AIRDROP=1   Skip solana airdrop for deploy keypair
 #   ARANCIO_SKIP_FUND=1      Skip wallet funding even if pubkey is set
+#   ARANCIO_SKIP_REGISTRY_SEED=1  Skip ca_registry PDA init + CA sync
+#   ARANCIO_SEED_SYMBOLS     Comma subset for registry seed, e.g. KOx,XOMx
 #   ARANCIO_DEPLOY_ARANCIO=1 Also deploy optional arancio program
 set -euo pipefail
 
@@ -44,6 +46,8 @@ Environment:
   ARANCIO_SKIP_BUILD=1     Skip anchor build
   ARANCIO_SKIP_AIRDROP=1   Skip deploy-key airdrop
   ARANCIO_SKIP_FUND=1      Skip wallet funding
+  ARANCIO_SKIP_REGISTRY_SEED=1  Skip ca_registry PDA init + CA sync
+  ARANCIO_SEED_SYMBOLS     Comma subset for registry seed, e.g. KOx,XOMx
   ARANCIO_DEPLOY_ARANCIO=1 Also deploy arancio program
 EOF
 }
@@ -126,6 +130,19 @@ echo ""
 echo "Verifying deployments…"
 verify_program "${CA_REGISTRY_ID}" "ca_registry"
 verify_program "${DIVSTRIP_ID}" "divstrip"
+
+echo ""
+echo "Syncing program IDs to web…"
+(cd web && npx --yes tsx scripts/sync-program-ids.ts)
+
+if [[ "${ARANCIO_SKIP_REGISTRY_SEED:-}" != "1" ]]; then
+  echo ""
+  echo "Seeding ca_registry PDAs for desk xStocks (deploy key authority)…"
+  ARANCIO_RPC_URL="${rpc_url}" "$ROOT/scripts/seed-ca-registry.sh"
+else
+  echo ""
+  echo "Skipping registry seed (ARANCIO_SKIP_REGISTRY_SEED=1)."
+fi
 
 if [[ -n "${fund_wallet}" && "${ARANCIO_SKIP_FUND:-}" != "1" ]]; then
   echo ""

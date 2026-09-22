@@ -9,22 +9,18 @@ import (
 	errors "github.com/gagliardetto/anchor-go/errors"
 	binary "github.com/gagliardetto/binary"
 	solanago "github.com/gagliardetto/solana-go"
-	sdk "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-	solana "github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/solana"
-	bindings "github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/solana/bindings"
-	cre "github.com/smartcontractkit/cre-sdk-go/cre"
 )
 
 type CaEvent struct {
-	EventId       [16]uint8 `json:"event_id"`
-	CaType        uint8     `json:"ca_type"`
+	EventId       [16]uint8 `json:"eventId"`
+	CaType        uint8     `json:"caType"`
 	Kind          uint8     `json:"kind"`
-	EffectiveTs   int64     `json:"effective_ts"`
-	MultiplierOld uint64    `json:"multiplier_old"`
-	MultiplierNew uint64    `json:"multiplier_new"`
-	CumY          uint64    `json:"cum_y"`
-	CumS          uint64    `json:"cum_s"`
-	YieldNonce    uint32    `json:"yield_nonce"`
+	EffectiveTs   int64     `json:"effectiveTs"`
+	MultiplierOld uint64    `json:"multiplierOld"`
+	MultiplierNew uint64    `json:"multiplierNew"`
+	CumY          uint64    `json:"cumY"`
+	CumS          uint64    `json:"cumS"`
+	YieldNonce    uint32    `json:"yieldNonce"`
 }
 
 func (obj CaEvent) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
@@ -152,79 +148,16 @@ func UnmarshalCaEvent(buf []byte) (*CaEvent, error) {
 	return obj, nil
 }
 
-func (c *Codec) EncodeCaEventStruct(in CaEvent) ([]byte, error) {
-	return in.Marshal()
-}
-
-// WriteReportFromCaEvent encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
-func (c *Divstrip) WriteReportFromCaEvent(
-	runtime cre.Runtime,
-	input CaEvent,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	encodedInput, err := c.Codec.EncodeCaEventStruct(input)
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
-
-	fwdReport := bindings.ForwarderReport{
-		AccountHash: encodedAccountList,
-		Payload:     encodedInput,
-	}
-	encodedFwdReport, err := fwdReport.Marshal()
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	promise := runtime.GenerateReport(&sdk.ReportRequest{
-		EncodedPayload: encodedFwdReport,
-		EncoderName:    "solana",
-		HashingAlgo:    "keccak256",
-		SigningAlgo:    "ecdsa",
-	})
-
-	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
-		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
-			ComputeConfig:     computeConfig,
-			Receiver:          ProgramID.Bytes(),
-			RemainingAccounts: remainingAccounts,
-			Report:            report,
-		})
-	})
-}
-
-func (c *Divstrip) WriteReportFromCaEvents(
-	runtime cre.Runtime,
-	inputs []CaEvent,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	elements := make([][]byte, len(inputs))
-	for i, input := range inputs {
-		encoded, err := c.Codec.EncodeCaEventStruct(input)
-		if err != nil {
-			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-		}
-		elements[i] = encoded
-	}
-	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
-}
-
-// Canonical Meteora curve-YT pool registered for a strip series window.
+// Canonical Meteora curve-YT pool registered for a strip series (single nonce).
 type CurveWindowLaunch struct {
-	Series      solanago.PublicKey `json:"series"`
-	CurveYtMint solanago.PublicKey `json:"curve_yt_mint"`
-	Pool        solanago.PublicKey `json:"pool"`
-	LaunchCumY  uint64             `json:"launch_cum_y"`
-
-	// Fair coupon at registration in parts-per-million (2% = 20_000).
-	LaunchFairPpm    uint32             `json:"launch_fair_ppm"`
-	InitialMcapUsd   uint64             `json:"initial_mcap_usd"`
-	MigrationMcapUsd uint64             `json:"migration_mcap_usd"`
-	RegisteredBy     solanago.PublicKey `json:"registered_by"`
+	Series           solanago.PublicKey `json:"series"`
+	CurveYtMint      solanago.PublicKey `json:"curveYtMint"`
+	Pool             solanago.PublicKey `json:"pool"`
+	LaunchCumY       uint64             `json:"launchCumY"`
+	LaunchFairPpm    uint32             `json:"launchFairPpm"`
+	InitialMcapUsd   uint64             `json:"initialMcapUsd"`
+	MigrationMcapUsd uint64             `json:"migrationMcapUsd"`
+	RegisteredBy     solanago.PublicKey `json:"registeredBy"`
 	Bump             uint8              `json:"bump"`
 }
 
@@ -353,75 +286,12 @@ func UnmarshalCurveWindowLaunch(buf []byte) (*CurveWindowLaunch, error) {
 	return obj, nil
 }
 
-func (c *Codec) EncodeCurveWindowLaunchStruct(in CurveWindowLaunch) ([]byte, error) {
-	return in.Marshal()
-}
-
-// WriteReportFromCurveWindowLaunch encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
-func (c *Divstrip) WriteReportFromCurveWindowLaunch(
-	runtime cre.Runtime,
-	input CurveWindowLaunch,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	encodedInput, err := c.Codec.EncodeCurveWindowLaunchStruct(input)
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
-
-	fwdReport := bindings.ForwarderReport{
-		AccountHash: encodedAccountList,
-		Payload:     encodedInput,
-	}
-	encodedFwdReport, err := fwdReport.Marshal()
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	promise := runtime.GenerateReport(&sdk.ReportRequest{
-		EncodedPayload: encodedFwdReport,
-		EncoderName:    "solana",
-		HashingAlgo:    "keccak256",
-		SigningAlgo:    "ecdsa",
-	})
-
-	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
-		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
-			ComputeConfig:     computeConfig,
-			Receiver:          ProgramID.Bytes(),
-			RemainingAccounts: remainingAccounts,
-			Report:            report,
-		})
-	})
-}
-
-func (c *Divstrip) WriteReportFromCurveWindowLaunchs(
-	runtime cre.Runtime,
-	inputs []CurveWindowLaunch,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	elements := make([][]byte, len(inputs))
-	for i, input := range inputs {
-		encoded, err := c.Codec.EncodeCurveWindowLaunchStruct(input)
-		if err != nil {
-			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-		}
-		elements[i] = encoded
-	}
-	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
-}
-
-// Curve-YT vault: links a strip series to its Meteora curve-YT mint; vault ATAs hold escrow liquidity for strip exits.
+// Curve-YT vault: links a strip series to its Meteora curve-YT mint.
 type CurveYtBridge struct {
 	Series      solanago.PublicKey `json:"series"`
-	CurveYtMint solanago.PublicKey `json:"curve_yt_mint"`
-
-	// liquid-curve-YT receipt mint (1:1 with curve-YT in vault).
-	LcYtMint solanago.PublicKey `json:"lc_yt_mint"`
-	Bump     uint8              `json:"bump"`
+	CurveYtMint solanago.PublicKey `json:"curveYtMint"`
+	LcYtMint    solanago.PublicKey `json:"lcYtMint"`
+	Bump        uint8              `json:"bump"`
 }
 
 func (obj CurveYtBridge) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
@@ -499,71 +369,10 @@ func UnmarshalCurveYtBridge(buf []byte) (*CurveYtBridge, error) {
 	return obj, nil
 }
 
-func (c *Codec) EncodeCurveYtBridgeStruct(in CurveYtBridge) ([]byte, error) {
-	return in.Marshal()
-}
-
-// WriteReportFromCurveYtBridge encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
-func (c *Divstrip) WriteReportFromCurveYtBridge(
-	runtime cre.Runtime,
-	input CurveYtBridge,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	encodedInput, err := c.Codec.EncodeCurveYtBridgeStruct(input)
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
-
-	fwdReport := bindings.ForwarderReport{
-		AccountHash: encodedAccountList,
-		Payload:     encodedInput,
-	}
-	encodedFwdReport, err := fwdReport.Marshal()
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	promise := runtime.GenerateReport(&sdk.ReportRequest{
-		EncodedPayload: encodedFwdReport,
-		EncoderName:    "solana",
-		HashingAlgo:    "keccak256",
-		SigningAlgo:    "ecdsa",
-	})
-
-	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
-		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
-			ComputeConfig:     computeConfig,
-			Receiver:          ProgramID.Bytes(),
-			RemainingAccounts: remainingAccounts,
-			Report:            report,
-		})
-	})
-}
-
-func (c *Divstrip) WriteReportFromCurveYtBridges(
-	runtime cre.Runtime,
-	inputs []CurveYtBridge,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	elements := make([][]byte, len(inputs))
-	for i, input := range inputs {
-		encoded, err := c.Codec.EncodeCurveYtBridgeStruct(input)
-		if err != nil {
-			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-		}
-		elements[i] = encoded
-	}
-	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
-}
-
-// CRE WriteReport payload: after a Yield CA sync, request a YT window launch.
+// CRE WriteReport payload: request curve-YT launch for a single yield nonce.
 type LaunchYtReport struct {
 	Mint       solanago.PublicKey `json:"mint"`
-	LockNonces uint32             `json:"lock_nonces"`
+	YieldNonce uint32             `json:"yieldNonce"`
 }
 
 func (obj LaunchYtReport) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
@@ -572,10 +381,10 @@ func (obj LaunchYtReport) MarshalWithEncoder(encoder *binary.Encoder) (err error
 	if err != nil {
 		return errors.NewField("Mint", err)
 	}
-	// Serialize `LockNonces`:
-	err = encoder.Encode(obj.LockNonces)
+	// Serialize `YieldNonce`:
+	err = encoder.Encode(obj.YieldNonce)
 	if err != nil {
-		return errors.NewField("LockNonces", err)
+		return errors.NewField("YieldNonce", err)
 	}
 	return nil
 }
@@ -596,10 +405,10 @@ func (obj *LaunchYtReport) UnmarshalWithDecoder(decoder *binary.Decoder) (err er
 	if err != nil {
 		return errors.NewField("Mint", err)
 	}
-	// Deserialize `LockNonces`:
-	err = decoder.Decode(&obj.LockNonces)
+	// Deserialize `YieldNonce`:
+	err = decoder.Decode(&obj.YieldNonce)
 	if err != nil {
-		return errors.NewField("LockNonces", err)
+		return errors.NewField("YieldNonce", err)
 	}
 	return nil
 }
@@ -621,78 +430,17 @@ func UnmarshalLaunchYtReport(buf []byte) (*LaunchYtReport, error) {
 	return obj, nil
 }
 
-func (c *Codec) EncodeLaunchYtReportStruct(in LaunchYtReport) ([]byte, error) {
-	return in.Marshal()
-}
-
-// WriteReportFromLaunchYtReport encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
-func (c *Divstrip) WriteReportFromLaunchYtReport(
-	runtime cre.Runtime,
-	input LaunchYtReport,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	encodedInput, err := c.Codec.EncodeLaunchYtReportStruct(input)
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
-
-	fwdReport := bindings.ForwarderReport{
-		AccountHash: encodedAccountList,
-		Payload:     encodedInput,
-	}
-	encodedFwdReport, err := fwdReport.Marshal()
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	promise := runtime.GenerateReport(&sdk.ReportRequest{
-		EncodedPayload: encodedFwdReport,
-		EncoderName:    "solana",
-		HashingAlgo:    "keccak256",
-		SigningAlgo:    "ecdsa",
-	})
-
-	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
-		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
-			ComputeConfig:     computeConfig,
-			Receiver:          ProgramID.Bytes(),
-			RemainingAccounts: remainingAccounts,
-			Report:            report,
-		})
-	})
-}
-
-func (c *Divstrip) WriteReportFromLaunchYtReports(
-	runtime cre.Runtime,
-	inputs []LaunchYtReport,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	elements := make([][]byte, len(inputs))
-	for i, input := range inputs {
-		encoded, err := c.Codec.EncodeLaunchYtReportStruct(input)
-		if err != nil {
-			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-		}
-		elements[i] = encoded
-	}
-	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
-}
-
 type RegistryLog struct {
 	Mint              solanago.PublicKey `json:"mint"`
 	Authority         solanago.PublicKey `json:"authority"`
-	ForwarderState    solanago.PublicKey `json:"forwarder_state"`
+	ForwarderState    solanago.PublicKey `json:"forwarderState"`
 	Symbol            [8]uint8           `json:"symbol"`
-	SymbolLen         uint8              `json:"symbol_len"`
+	SymbolLen         uint8              `json:"symbolLen"`
 	Bump              uint8              `json:"bump"`
-	CurrentCumY       uint64             `json:"current_cum_y"`
-	CurrentCumS       uint64             `json:"current_cum_s"`
-	CurrentYieldNonce uint32             `json:"current_yield_nonce"`
-	EventCount        uint32             `json:"event_count"`
+	CurrentCumY       uint64             `json:"currentCumY"`
+	CurrentCumS       uint64             `json:"currentCumS"`
+	CurrentYieldNonce uint32             `json:"currentYieldNonce"`
+	EventCount        uint32             `json:"eventCount"`
 	Events            []CaEvent          `json:"events"`
 }
 
@@ -841,76 +589,17 @@ func UnmarshalRegistryLog(buf []byte) (*RegistryLog, error) {
 	return obj, nil
 }
 
-func (c *Codec) EncodeRegistryLogStruct(in RegistryLog) ([]byte, error) {
-	return in.Marshal()
-}
-
-// WriteReportFromRegistryLog encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
-func (c *Divstrip) WriteReportFromRegistryLog(
-	runtime cre.Runtime,
-	input RegistryLog,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	encodedInput, err := c.Codec.EncodeRegistryLogStruct(input)
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
-
-	fwdReport := bindings.ForwarderReport{
-		AccountHash: encodedAccountList,
-		Payload:     encodedInput,
-	}
-	encodedFwdReport, err := fwdReport.Marshal()
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	promise := runtime.GenerateReport(&sdk.ReportRequest{
-		EncodedPayload: encodedFwdReport,
-		EncoderName:    "solana",
-		HashingAlgo:    "keccak256",
-		SigningAlgo:    "ecdsa",
-	})
-
-	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
-		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
-			ComputeConfig:     computeConfig,
-			Receiver:          ProgramID.Bytes(),
-			RemainingAccounts: remainingAccounts,
-			Report:            report,
-		})
-	})
-}
-
-func (c *Divstrip) WriteReportFromRegistryLogs(
-	runtime cre.Runtime,
-	inputs []RegistryLog,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	elements := make([][]byte, len(inputs))
-	for i, input := range inputs {
-		encoded, err := c.Codec.EncodeRegistryLogStruct(input)
-		if err != nil {
-			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-		}
-		elements[i] = encoded
-	}
-	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
-}
-
 type StripMarket struct {
-	Authority         solanago.PublicKey `json:"authority"`
-	UnderlyingMint    solanago.PublicKey `json:"underlying_mint"`
-	Registry          solanago.PublicKey `json:"registry"`
-	Symbol            [8]uint8           `json:"symbol"`
-	SymbolLen         uint8              `json:"symbol_len"`
-	DefaultLockNonces uint32             `json:"default_lock_nonces"`
-	Bump              uint8              `json:"bump"`
-	VaultBump         uint8              `json:"vault_bump"`
+	Authority      solanago.PublicKey `json:"authority"`
+	UnderlyingMint solanago.PublicKey `json:"underlyingMint"`
+	Registry       solanago.PublicKey `json:"registry"`
+	Symbol         [8]uint8           `json:"symbol"`
+	SymbolLen      uint8              `json:"symbolLen"`
+
+	// Max nonces ahead of tip that users may open (e.g. tip=3 → open up to 3+8).
+	MaxForwardNonces uint32 `json:"maxForwardNonces"`
+	Bump             uint8  `json:"bump"`
+	VaultBump        uint8  `json:"vaultBump"`
 }
 
 func (obj StripMarket) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
@@ -939,10 +628,10 @@ func (obj StripMarket) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
 	if err != nil {
 		return errors.NewField("SymbolLen", err)
 	}
-	// Serialize `DefaultLockNonces`:
-	err = encoder.Encode(obj.DefaultLockNonces)
+	// Serialize `MaxForwardNonces`:
+	err = encoder.Encode(obj.MaxForwardNonces)
 	if err != nil {
-		return errors.NewField("DefaultLockNonces", err)
+		return errors.NewField("MaxForwardNonces", err)
 	}
 	// Serialize `Bump`:
 	err = encoder.Encode(obj.Bump)
@@ -993,10 +682,10 @@ func (obj *StripMarket) UnmarshalWithDecoder(decoder *binary.Decoder) (err error
 	if err != nil {
 		return errors.NewField("SymbolLen", err)
 	}
-	// Deserialize `DefaultLockNonces`:
-	err = decoder.Decode(&obj.DefaultLockNonces)
+	// Deserialize `MaxForwardNonces`:
+	err = decoder.Decode(&obj.MaxForwardNonces)
 	if err != nil {
-		return errors.NewField("DefaultLockNonces", err)
+		return errors.NewField("MaxForwardNonces", err)
 	}
 	// Deserialize `Bump`:
 	err = decoder.Decode(&obj.Bump)
@@ -1028,77 +717,16 @@ func UnmarshalStripMarket(buf []byte) (*StripMarket, error) {
 	return obj, nil
 }
 
-func (c *Codec) EncodeStripMarketStruct(in StripMarket) ([]byte, error) {
-	return in.Marshal()
-}
-
-// WriteReportFromStripMarket encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
-func (c *Divstrip) WriteReportFromStripMarket(
-	runtime cre.Runtime,
-	input StripMarket,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	encodedInput, err := c.Codec.EncodeStripMarketStruct(input)
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
-
-	fwdReport := bindings.ForwarderReport{
-		AccountHash: encodedAccountList,
-		Payload:     encodedInput,
-	}
-	encodedFwdReport, err := fwdReport.Marshal()
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	promise := runtime.GenerateReport(&sdk.ReportRequest{
-		EncodedPayload: encodedFwdReport,
-		EncoderName:    "solana",
-		HashingAlgo:    "keccak256",
-		SigningAlgo:    "ecdsa",
-	})
-
-	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
-		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
-			ComputeConfig:     computeConfig,
-			Receiver:          ProgramID.Bytes(),
-			RemainingAccounts: remainingAccounts,
-			Report:            report,
-		})
-	})
-}
-
-func (c *Divstrip) WriteReportFromStripMarkets(
-	runtime cre.Runtime,
-	inputs []StripMarket,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	elements := make([][]byte, len(inputs))
-	for i, input := range inputs {
-		encoded, err := c.Codec.EncodeStripMarketStruct(input)
-		if err != nil {
-			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-		}
-		elements[i] = encoded
-	}
-	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
-}
-
+// One strip series per dividend yield nonce (covers coupon step `nonce → nonce+1`).
 type StripSeries struct {
 	Market         solanago.PublicKey `json:"market"`
-	UnderlyingMint solanago.PublicKey `json:"underlying_mint"`
-	StartNonce     uint32             `json:"start_nonce"`
-	TargetNonce    uint32             `json:"target_nonce"`
-	PtMint         solanago.PublicKey `json:"pt_mint"`
-	YtMint         solanago.PublicKey `json:"yt_mint"`
-	CumYStart      uint64             `json:"cum_y_start"`
+	UnderlyingMint solanago.PublicKey `json:"underlyingMint"`
+	YieldNonce     uint32             `json:"yieldNonce"`
+	PtMint         solanago.PublicKey `json:"ptMint"`
+	YtMint         solanago.PublicKey `json:"ytMint"`
+	CumYStart      uint64             `json:"cumYStart"`
 
-	// Frozen at series creation from registry tip (updated on first wrap if 0 events).
+	// Frozen at series creation from registry (0 for forward nonces until redeem).
 	Bump uint8 `json:"bump"`
 }
 
@@ -1113,15 +741,10 @@ func (obj StripSeries) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
 	if err != nil {
 		return errors.NewField("UnderlyingMint", err)
 	}
-	// Serialize `StartNonce`:
-	err = encoder.Encode(obj.StartNonce)
+	// Serialize `YieldNonce`:
+	err = encoder.Encode(obj.YieldNonce)
 	if err != nil {
-		return errors.NewField("StartNonce", err)
-	}
-	// Serialize `TargetNonce`:
-	err = encoder.Encode(obj.TargetNonce)
-	if err != nil {
-		return errors.NewField("TargetNonce", err)
+		return errors.NewField("YieldNonce", err)
 	}
 	// Serialize `PtMint`:
 	err = encoder.Encode(obj.PtMint)
@@ -1167,15 +790,10 @@ func (obj *StripSeries) UnmarshalWithDecoder(decoder *binary.Decoder) (err error
 	if err != nil {
 		return errors.NewField("UnderlyingMint", err)
 	}
-	// Deserialize `StartNonce`:
-	err = decoder.Decode(&obj.StartNonce)
+	// Deserialize `YieldNonce`:
+	err = decoder.Decode(&obj.YieldNonce)
 	if err != nil {
-		return errors.NewField("StartNonce", err)
-	}
-	// Deserialize `TargetNonce`:
-	err = decoder.Decode(&obj.TargetNonce)
-	if err != nil {
-		return errors.NewField("TargetNonce", err)
+		return errors.NewField("YieldNonce", err)
 	}
 	// Deserialize `PtMint`:
 	err = decoder.Decode(&obj.PtMint)
@@ -1217,75 +835,12 @@ func UnmarshalStripSeries(buf []byte) (*StripSeries, error) {
 	return obj, nil
 }
 
-func (c *Codec) EncodeStripSeriesStruct(in StripSeries) ([]byte, error) {
-	return in.Marshal()
-}
-
-// WriteReportFromStripSeries encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
-func (c *Divstrip) WriteReportFromStripSeries(
-	runtime cre.Runtime,
-	input StripSeries,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	encodedInput, err := c.Codec.EncodeStripSeriesStruct(input)
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
-
-	fwdReport := bindings.ForwarderReport{
-		AccountHash: encodedAccountList,
-		Payload:     encodedInput,
-	}
-	encodedFwdReport, err := fwdReport.Marshal()
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	promise := runtime.GenerateReport(&sdk.ReportRequest{
-		EncodedPayload: encodedFwdReport,
-		EncoderName:    "solana",
-		HashingAlgo:    "keccak256",
-		SigningAlgo:    "ecdsa",
-	})
-
-	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
-		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
-			ComputeConfig:     computeConfig,
-			Receiver:          ProgramID.Bytes(),
-			RemainingAccounts: remainingAccounts,
-			Report:            report,
-		})
-	})
-}
-
-func (c *Divstrip) WriteReportFromStripSeriess(
-	runtime cre.Runtime,
-	inputs []StripSeries,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	elements := make([][]byte, len(inputs))
-	for i, input := range inputs {
-		encoded, err := c.Codec.EncodeStripSeriesStruct(input)
-		if err != nil {
-			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-		}
-		elements[i] = encoded
-	}
-	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
-}
-
 // Keeps LaunchYtReport in the Anchor IDL for CRE WriteReportFromLaunchYtReport.
 type YtLaunchRequested struct {
-	Mint        solanago.PublicKey `json:"mint"`
-	StartNonce  uint32             `json:"start_nonce"`
-	TargetNonce uint32             `json:"target_nonce"`
-	CumYStart   uint64             `json:"cum_y_start"`
-	LockNonces  uint32             `json:"lock_nonces"`
-	Report      LaunchYtReport     `json:"report"`
+	Mint       solanago.PublicKey `json:"mint"`
+	YieldNonce uint32             `json:"yieldNonce"`
+	CumYStart  uint64             `json:"cumYStart"`
+	Report     LaunchYtReport     `json:"report"`
 }
 
 func (obj YtLaunchRequested) MarshalWithEncoder(encoder *binary.Encoder) (err error) {
@@ -1294,25 +849,15 @@ func (obj YtLaunchRequested) MarshalWithEncoder(encoder *binary.Encoder) (err er
 	if err != nil {
 		return errors.NewField("Mint", err)
 	}
-	// Serialize `StartNonce`:
-	err = encoder.Encode(obj.StartNonce)
+	// Serialize `YieldNonce`:
+	err = encoder.Encode(obj.YieldNonce)
 	if err != nil {
-		return errors.NewField("StartNonce", err)
-	}
-	// Serialize `TargetNonce`:
-	err = encoder.Encode(obj.TargetNonce)
-	if err != nil {
-		return errors.NewField("TargetNonce", err)
+		return errors.NewField("YieldNonce", err)
 	}
 	// Serialize `CumYStart`:
 	err = encoder.Encode(obj.CumYStart)
 	if err != nil {
 		return errors.NewField("CumYStart", err)
-	}
-	// Serialize `LockNonces`:
-	err = encoder.Encode(obj.LockNonces)
-	if err != nil {
-		return errors.NewField("LockNonces", err)
 	}
 	// Serialize `Report`:
 	err = encoder.Encode(obj.Report)
@@ -1338,25 +883,15 @@ func (obj *YtLaunchRequested) UnmarshalWithDecoder(decoder *binary.Decoder) (err
 	if err != nil {
 		return errors.NewField("Mint", err)
 	}
-	// Deserialize `StartNonce`:
-	err = decoder.Decode(&obj.StartNonce)
+	// Deserialize `YieldNonce`:
+	err = decoder.Decode(&obj.YieldNonce)
 	if err != nil {
-		return errors.NewField("StartNonce", err)
-	}
-	// Deserialize `TargetNonce`:
-	err = decoder.Decode(&obj.TargetNonce)
-	if err != nil {
-		return errors.NewField("TargetNonce", err)
+		return errors.NewField("YieldNonce", err)
 	}
 	// Deserialize `CumYStart`:
 	err = decoder.Decode(&obj.CumYStart)
 	if err != nil {
 		return errors.NewField("CumYStart", err)
-	}
-	// Deserialize `LockNonces`:
-	err = decoder.Decode(&obj.LockNonces)
-	if err != nil {
-		return errors.NewField("LockNonces", err)
 	}
 	// Deserialize `Report`:
 	err = decoder.Decode(&obj.Report)
@@ -1381,65 +916,4 @@ func UnmarshalYtLaunchRequested(buf []byte) (*YtLaunchRequested, error) {
 		return nil, err
 	}
 	return obj, nil
-}
-
-func (c *Codec) EncodeYtLaunchRequestedStruct(in YtLaunchRequested) ([]byte, error) {
-	return in.Marshal()
-}
-
-// WriteReportFromYtLaunchRequested encodes the input struct, hashes the provided accounts, // generates a signed report, and submits it via WriteReport. //  // remainingAccounts must follow the keystone-forwarder account layout: //   - Index 0: forwarderState – the forwarder program's state account. //   - Index 1: forwarderAuthority – PDA derived from seeds //     ["forwarder", forwarderState, receiverProgram] under the forwarder program ID. //   - Index 2+: receiver-specific accounts required by the target program. //  // The full slice is hashed (via CalculateAccountsHash) into the report and forwarded // as WriteCreReportRequest.RemainingAccounts. The on-chain forwarder strips indices 0 and 1 // before CPI-ing into the receiver, so they must be present and correctly ordered.
-func (c *Divstrip) WriteReportFromYtLaunchRequested(
-	runtime cre.Runtime,
-	input YtLaunchRequested,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	encodedInput, err := c.Codec.EncodeYtLaunchRequestedStruct(input)
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	encodedAccountList := bindings.CalculateAccountsHash(remainingAccounts)
-
-	fwdReport := bindings.ForwarderReport{
-		AccountHash: encodedAccountList,
-		Payload:     encodedInput,
-	}
-	encodedFwdReport, err := fwdReport.Marshal()
-	if err != nil {
-		return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-	}
-
-	promise := runtime.GenerateReport(&sdk.ReportRequest{
-		EncodedPayload: encodedFwdReport,
-		EncoderName:    "solana",
-		HashingAlgo:    "keccak256",
-		SigningAlgo:    "ecdsa",
-	})
-
-	return cre.ThenPromise(promise, func(report *cre.Report) cre.Promise[*solana.WriteReportReply] {
-		return c.client.WriteReport(runtime, &solana.WriteCreReportRequest{
-			ComputeConfig:     computeConfig,
-			Receiver:          ProgramID.Bytes(),
-			RemainingAccounts: remainingAccounts,
-			Report:            report,
-		})
-	})
-}
-
-func (c *Divstrip) WriteReportFromYtLaunchRequesteds(
-	runtime cre.Runtime,
-	inputs []YtLaunchRequested,
-	remainingAccounts []*solana.AccountMeta,
-	computeConfig *solana.ComputeConfig,
-) cre.Promise[*solana.WriteReportReply] {
-	elements := make([][]byte, len(inputs))
-	for i, input := range inputs {
-		encoded, err := c.Codec.EncodeYtLaunchRequestedStruct(input)
-		if err != nil {
-			return cre.PromiseFromResult[*solana.WriteReportReply](nil, err)
-		}
-		elements[i] = encoded
-	}
-	return c.WriteReportFromBorshEncodedVec(runtime, elements, remainingAccounts, computeConfig)
 }
