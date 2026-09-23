@@ -109,8 +109,8 @@ sequenceDiagram
 ```mermaid
 flowchart LR
   subgraph Offchain["Off-chain oracle path"]
-    XS["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/xstocks.svg' width='40' height='40' /><br/>xStocks API"]
-    CRE["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/chainlink.svg' width='40' height='40' /><br/>Chainlink CRE"]
+    XS["<img src='https://raw.githubusercontent.com/SolidityDrone/arancio/Rehydratation/docs/diagrams/brand/xstocks.svg' width='40' height='40' /><br/>xStocks API"]
+    CRE["<img src='https://raw.githubusercontent.com/SolidityDrone/arancio/Rehydratation/docs/diagrams/brand/chainlink.svg' width='40' height='40' /><br/>Chainlink CRE"]
   end
 
   subgraph Onchain["On-chain DivStrip"]
@@ -183,12 +183,12 @@ sequenceDiagram
 flowchart TB
   subgraph Desk["Desk"]
     U[Trader · pays USDC]
-    API["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/server.svg' width='40' height='40' /><br/>Launch backend"]
+    API["<img src='https://raw.githubusercontent.com/SolidityDrone/arancio/Rehydratation/docs/diagrams/brand/server.svg' width='40' height='40' /><br/>Launch backend"]
   end
 
   subgraph Met["Meteora"]
-    DBC["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/meteora.svg' width='40' height='40' /><br/>DBC bonding"]
-    DAMM["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/meteora.svg' width='40' height='40' /><br/>DAMM v2"]
+    DBC["<img src='https://raw.githubusercontent.com/SolidityDrone/arancio/Rehydratation/docs/diagrams/brand/meteora.svg' width='40' height='40' /><br/>DBC bonding"]
+    DAMM["<img src='https://raw.githubusercontent.com/SolidityDrone/arancio/Rehydratation/docs/diagrams/brand/meteora.svg' width='40' height='40' /><br/>DAMM v2"]
   end
 
   subgraph Div["DivStrip"]
@@ -198,7 +198,7 @@ flowchart TB
   end
 
   subgraph Yield["Vault yield park"]
-    K["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/kamino.svg' width='40' height='40' /><br/>Kamino cUSDC"]
+    K["<img src='https://raw.githubusercontent.com/SolidityDrone/arancio/Rehydratation/docs/diagrams/brand/kamino.svg' width='40' height='40' /><br/>Kamino cUSDC"]
   end
 
   API -->|create pool| DBC
