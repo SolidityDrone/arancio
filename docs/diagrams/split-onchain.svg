@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 420" role="img" aria-label="Split on-chain pieces">
+
+<defs>
+  <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 Z" fill="#14f195"/>
+  </marker>
+  <marker id="arrow-cyan" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 Z" fill="#00d1ff"/>
+  </marker>
+  <marker id="arrow-muted" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 Z" fill="#6f7f72"/>
+  </marker>
+</defs>
+
+<rect width="980" height="420" fill="#020403"/>
+<text x="24" y="32" fill="#14f195" font-family="ui-monospace,monospace" font-size="12" letter-spacing="0.12em">ON-CHAIN PIECES · SPLIT</text>
+<text x="24" y="54" fill="#6f7f72" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13">xStocks API → Chainlink CRE → ca_registry → DivStrip wrap / redeem</text>
+
+<!-- Off-chain band -->
+<rect x="20" y="76" width="300" height="300" rx="14" fill="#061018" stroke="rgba(0,209,255,0.35)" stroke-width="1"/>
+<text x="36" y="100" fill="#00d1ff" font-family="ui-monospace,monospace" font-size="11" letter-spacing="0.1em">OFF-CHAIN</text>
+<rect x="40" y="120" width="260" height="70" rx="10" fill="#0a120e" stroke="#00d1ff" stroke-width="1.2"/>
+<g transform="translate(52,130)"><g transform="scale(0.625)">
+  <rect width="64" height="64" rx="14" fill="#0B0B0F"/>
+  <path fill="#F5F5F7" d="M18 16h8.2L32 28.4 37.8 16H46l-9.4 16L46 48h-8.2L32 35.6 26.2 48H18l9.4-16L18 16z"/>
+  <circle cx="48" cy="48" r="5" fill="#14F195"/>
+</g></g>
+<text x="98" y="148" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">xStocks API</text>
+<text x="98" y="168" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">CA calendar</text>
+<rect x="40" y="230" width="260" height="70" rx="10" fill="#0a120e" stroke="#375BD2" stroke-width="1.2"/>
+<g transform="translate(52,240)"><g transform="scale(0.625)">
+  <rect width="64" height="64" rx="14" fill="#0B0B0F"/>
+  <g transform="translate(13.1 13.1) scale(1)">
+    <path fill="#375BD2" d="M18.9 0l-4 2.3L4 8.6l-4 2.3V32.7L4 35l11 6.3 4 2.3 4-2.3L33.8 35l4-2.3V10.9l-4-2.3-10.9-6.3-4-2.3zM8 28.1V15.5l10.9-6.3 10.9 6.3v12.6l-10.9 6.3L8 28.1z"/>
+  </g>
+</g></g>
+<text x="98" y="258" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">Chainlink CRE</text>
+<text x="98" y="278" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">label yield vs supply</text>
+<line x1="170" y1="190" x2="170" y2="230" stroke="#00d1ff" stroke-width="1.6" marker-end="url(#arrow-cyan)"/>
+<text x="178" y="214" fill="#8fa396" font-family="ui-monospace,monospace" font-size="10">CA calendar</text>
+
+<!-- On-chain band -->
+<rect x="360" y="76" width="600" height="300" rx="14" fill="#061018" stroke="rgba(20,241,149,0.35)" stroke-width="1"/>
+<text x="376" y="100" fill="#14f195" font-family="ui-monospace,monospace" font-size="11" letter-spacing="0.1em">ON-CHAIN</text>
+<rect x="380" y="120" width="200" height="64" rx="10" fill="#0a120e" stroke="#14f195" stroke-width="1.2"/>
+<text x="394" y="148" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">ca_registry</text>
+<text x="394" y="168" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">nonce · cum_y</text>
+<rect x="620" y="120" width="200" height="64" rx="10" fill="#0a120e" stroke="#14f195" stroke-width="1.2"/>
+<text x="634" y="148" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">divstrip</text>
+<text x="634" y="168" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">wrap / redeem</text>
+<rect x="380" y="220" width="170" height="58" rx="10" fill="#0a120e" stroke="rgba(20,241,149,0.45)" stroke-width="1.2"/>
+<text x="394" y="248" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">StripMarket</text>
+<text x="394" y="268" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">per xStock</text>
+<rect x="570" y="220" width="170" height="58" rx="10" fill="#0a120e" stroke="rgba(20,241,149,0.45)" stroke-width="1.2"/>
+<text x="584" y="248" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">StripSeries n</text>
+<text x="584" y="268" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">yield window</text>
+<rect x="760" y="220" width="170" height="58" rx="10" fill="#0a120e" stroke="rgba(20,241,149,0.45)" stroke-width="1.2"/>
+<text x="774" y="248" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">xStock vault</text>
+<text x="774" y="268" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">escrow</text>
+<rect x="430" y="310" width="170" height="48" rx="10" fill="#0a120e" stroke="rgba(20,241,149,0.45)" stroke-width="1.2"/>
+<text x="444" y="338" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">strip PT</text>
+<text x="444" y="358" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">capital leg</text>
+<rect x="650" y="310" width="170" height="48" rx="10" fill="#0a120e" stroke="rgba(20,241,149,0.45)" stroke-width="1.2"/>
+<text x="664" y="338" fill="#f0f7f2" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600">strip YT</text>
+<text x="664" y="358" fill="#6f7f72" font-family="ui-monospace,monospace" font-size="11">yield leg</text>
+
+<!-- Cross arrows -->
+<line x1="300" y1="265" x2="380" y2="152" stroke="#14f195" stroke-width="1.6" marker-end="url(#arrow)"/>
+<text x="310" y="190" fill="#8fa396" font-family="ui-monospace,monospace" font-size="10">typed events</text>
+<line x1="580" y1="152" x2="620" y2="152" stroke="#14f195" stroke-width="1.6" marker-end="url(#arrow)"/>
+<line x1="720" y1="184" x2="655" y2="220" stroke="#6f7f72" stroke-width="1.2" marker-end="url(#arrow-muted)"/>
+<line x1="720" y1="184" x2="845" y2="220" stroke="#6f7f72" stroke-width="1.2" marker-end="url(#arrow-muted)"/>
+<line x1="720" y1="184" x2="465" y2="220" stroke="#6f7f72" stroke-width="1.2" marker-end="url(#arrow-muted)"/>
+<line x1="720" y1="184" x2="515" y2="310" stroke="#6f7f72" stroke-width="1.2" marker-end="url(#arrow-muted)"/>
+<line x1="720" y1="184" x2="735" y2="310" stroke="#6f7f72" stroke-width="1.2" marker-end="url(#arrow-muted)"/>
+</svg>
