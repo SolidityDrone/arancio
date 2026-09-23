@@ -3,11 +3,10 @@ import { seriesPhase, type SeriesPhase } from "./strip-math";
 import type { CaListRow } from "./xstocks-api";
 
 const KIND_YIELD = 0;
+/** Fallback cadence when history is thin (quarterly). */
+const DEFAULT_MS_PER_YIELD = 90 * 24 * 60 * 60 * 1000;
 
-function includeInNonceReplay(
-  row: CaListRow,
-  kind: number
-): boolean {
+function includeInNonceReplay(row: CaListRow, kind: number): boolean {
   if (kind === KIND_YIELD) return true;
   return Boolean(row.multiplierOld && row.multiplierNew);
 }
@@ -15,6 +14,8 @@ function includeInNonceReplay(
 export type YieldNonceMaturity = {
   effectiveTimeUtc: string;
   upcoming: boolean;
+  /** True when projected from cadence (not a recorded CA). */
+  estimated?: boolean;
 };
 
 /** Registry tip after each yield CA — same replay order as ca_registry / assignRegistryYieldNonces. */
@@ -42,6 +43,7 @@ export function buildYieldNonceMaturityMap(
       out.set(yieldNonce, {
         effectiveTimeUtc: row.effectiveTimeUtc,
         upcoming: row.upcoming,
+        estimated: false,
       });
     }
   }
@@ -49,11 +51,58 @@ export function buildYieldNonceMaturityMap(
   return out;
 }
 
+/** Median interval between consecutive known yield tips (ms). */
+function medianYieldIntervalMs(
+  schedule: Map<number, YieldNonceMaturity>
+): number {
+  const keys = [...schedule.keys()].sort((a, b) => a - b);
+  if (keys.length < 2) return DEFAULT_MS_PER_YIELD;
+  const gaps: number[] = [];
+  for (let i = 1; i < keys.length; i += 1) {
+    const a = new Date(schedule.get(keys[i - 1])!.effectiveTimeUtc).getTime();
+    const b = new Date(schedule.get(keys[i])!.effectiveTimeUtc).getTime();
+    if (Number.isFinite(a) && Number.isFinite(b) && b > a) gaps.push(b - a);
+  }
+  if (gaps.length === 0) return DEFAULT_MS_PER_YIELD;
+  gaps.sort((x, y) => x - y);
+  const mid = Math.floor(gaps.length / 2);
+  return gaps.length % 2 === 0
+    ? Math.round((gaps[mid - 1] + gaps[mid]) / 2)
+    : gaps[mid];
+}
+
+/**
+ * Maturity for strip window n = when tip advances to n+1 (next yield CA).
+ * Forward windows without a recorded CA are projected from historical cadence.
+ */
 export function maturityForYieldNonce(
   schedule: Map<number, YieldNonceMaturity>,
   yieldNonce: number
 ): YieldNonceMaturity | null {
-  return schedule.get(yieldNonce + 1) ?? null;
+  const known = schedule.get(yieldNonce + 1);
+  if (known) return known;
+
+  const keys = [...schedule.keys()].sort((a, b) => a - b);
+  if (keys.length === 0) return null;
+
+  const lastKey = keys[keys.length - 1]!;
+  const last = schedule.get(lastKey)!;
+  const lastTs = new Date(last.effectiveTimeUtc).getTime();
+  if (!Number.isFinite(lastTs)) return null;
+
+  const targetTip = yieldNonce + 1;
+  if (targetTip <= lastKey) {
+    return schedule.get(targetTip) ?? null;
+  }
+
+  const step = medianYieldIntervalMs(schedule);
+  const stepsAhead = targetTip - lastKey;
+  const est = new Date(lastTs + stepsAhead * step);
+  return {
+    effectiveTimeUtc: est.toISOString(),
+    upcoming: true,
+    estimated: true,
+  };
 }
 
 export function formatMonthYear(iso: string): string {
@@ -63,34 +112,37 @@ export function formatMonthYear(iso: string): string {
   });
 }
 
-/** e.g. "March, 2026" */
+/** e.g. "September 2028" */
 export function formatMonthYearLong(iso: string): string {
   const d = new Date(iso);
   const month = d.toLocaleDateString("en-US", { month: "long" });
-  return `${month}, ${d.getFullYear()}`;
+  return `${month} ${d.getFullYear()}`;
 }
 
-/** Best CA date for labeling a strip window (maturity ex-div, else next known). */
+/** Best CA / projected date for labeling a strip window. */
 export function windowDateForYieldNonce(
   schedule: Map<number, YieldNonceMaturity>,
   yieldNonce: number
 ): YieldNonceMaturity | null {
   return (
     maturityForYieldNonce(schedule, yieldNonce) ??
-    schedule.get(yieldNonce + 1) ??
     schedule.get(yieldNonce) ??
     null
   );
 }
 
-/** Primary desk label, e.g. `N5 (March, 2026)`. */
+/**
+ * Desk / dropdown label, e.g. `N5 · est. September 2028` or `N3 · March 2026`.
+ */
 export function formatYieldNonceWindowLabel(
   yieldNonce: number,
   schedule: Map<number, YieldNonceMaturity>
 ): string {
   const when = windowDateForYieldNonce(schedule, yieldNonce);
   if (!when) return `N${yieldNonce}`;
-  return `N${yieldNonce} (${formatMonthYearLong(when.effectiveTimeUtc)})`;
+  const monthYear = formatMonthYearLong(when.effectiveTimeUtc);
+  const prefix = when.estimated || when.upcoming ? "est. " : "";
+  return `N${yieldNonce} · ${prefix}${monthYear}`;
 }
 
 export function formatNonceMaturityLabel(
@@ -100,8 +152,12 @@ export function formatNonceMaturityLabel(
 ): string | null {
   if (!maturity) return null;
   const phase = seriesPhase(tipNonce, yieldNonce);
-  const when = formatMonthYear(maturity.effectiveTimeUtc);
-  return formatMaturityLabelForPhase(phase, when, maturity.upcoming);
+  const when = formatMonthYearLong(maturity.effectiveTimeUtc);
+  return formatMaturityLabelForPhase(
+    phase,
+    when,
+    maturity.upcoming || Boolean(maturity.estimated)
+  );
 }
 
 export function formatMaturityLabelForPhase(
@@ -113,7 +169,7 @@ export function formatMaturityLabelForPhase(
     return upcoming ? `Matured ~${when}` : `Matured ${when}`;
   }
   if (phase === "locked") {
-    return upcoming ? `Matures ~${when}` : `Maturity ~${when}`;
+    return upcoming ? `est. ${when}` : `Maturity ${when}`;
   }
-  return `Est. ${when}`;
+  return `est. ${when}`;
 }

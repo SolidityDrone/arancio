@@ -8,6 +8,8 @@ export type ArchNode = {
   label: string;
   detail: string;
   kind: "oracle" | "program" | "account" | "token" | "venue" | "backend" | "actor";
+  /** Optional brand mark under /public/brand */
+  logo?: string;
 };
 
 export type ArchStep = {
@@ -21,10 +23,18 @@ export type ArchStep = {
 /** Split path: corporate actions → PT/YT → redeem */
 export const SPLIT_NODES: ArchNode[] = [
   {
+    id: "xstocks",
+    label: "xStocks API",
+    detail: "Corporate-action calendar",
+    kind: "oracle",
+    logo: "/brand/xstocks.svg",
+  },
+  {
     id: "cre",
     label: "Chainlink CRE",
-    detail: "xStocks CA calendar → typed events",
+    detail: "Reads API · labels yield vs supply",
     kind: "oracle",
+    logo: "/brand/chainlink.svg",
   },
   {
     id: "registry",
@@ -69,8 +79,8 @@ export const SPLIT_STEPS: ArchStep[] = [
     id: "oracle",
     t: "t₀",
     title: "Oracle writes the calendar",
-    body: "CRE labels each corporate action (dividend vs split) and syncs ca_registry. Only yield events advance current_yield_nonce and cum_y.",
-    nodes: ["cre", "registry"],
+    body: "Chainlink CRE reads the xStocks API, labels each corporate action (dividend vs split), and syncs ca_registry. Only yield events advance current_yield_nonce and cum_y.",
+    nodes: ["xstocks", "cre", "registry"],
   },
   {
     id: "init",
@@ -109,12 +119,12 @@ export const SPLIT_STEPS: ArchStep[] = [
   },
 ];
 
-/** Curve path: DBC → vault → graduation → optional Kamino park */
+/** Curve path: DBC → wallet → vault → graduation → optional Kamino park */
 export const CURVE_NODES: ArchNode[] = [
   {
     id: "user",
     label: "Trader / bonder",
-    detail: "Pays USDC on the desk",
+    detail: "Pays USDC · holds wallet hops",
     kind: "actor",
   },
   {
@@ -122,17 +132,19 @@ export const CURVE_NODES: ArchNode[] = [
     label: "Launch backend",
     detail: "Next launch-service · Meteora txs",
     kind: "backend",
+    logo: "/brand/server.svg",
   },
   {
     id: "dbc",
     label: "Meteora DBC",
     detail: "USDC ↔ curve-YT bonding",
     kind: "venue",
+    logo: "/brand/meteora.svg",
   },
   {
     id: "curve",
     label: "curve-YT mint",
-    detail: "Pool discovery token",
+    detail: "Lands in trader wallet first",
     kind: "token",
   },
   {
@@ -144,7 +156,7 @@ export const CURVE_NODES: ArchNode[] = [
   {
     id: "bridge",
     label: "curve-YT vault",
-    detail: "lcYT shares · NAV bridge",
+    detail: "Deposit curve-YT · mint lcYT",
     kind: "account",
   },
   {
@@ -152,12 +164,14 @@ export const CURVE_NODES: ArchNode[] = [
     label: "DAMM v2",
     detail: "Post-graduation AMM",
     kind: "venue",
+    logo: "/brand/meteora.svg",
   },
   {
     id: "kamino",
     label: "Kamino cUSDC",
     detail: "Vault parks idle USDC",
     kind: "venue",
+    logo: "/brand/kamino.svg",
   },
 ];
 
@@ -172,8 +186,8 @@ export const CURVE_STEPS: ArchStep[] = [
   {
     id: "bond",
     t: "02",
-    title: "Bond — buy via vault",
-    body: "User pays USDC. Desk swaps on DBC for curve-YT and deposits into the vault; user receives lcYT shares (NAV). No user-side Kamino wrap.",
+    title: "Bond — swap then deposit",
+    body: "Trader swaps USDC → curve-YT on DBC (tokens land in wallet), then deposits curve-YT into the vault and receives lcYT. Vault never pulls from Meteora directly.",
     nodes: ["user", "dbc", "curve", "bridge"],
   },
   {
@@ -200,7 +214,7 @@ export const CURVE_STEPS: ArchStep[] = [
 ];
 
 export const SPLIT_SUMMARY =
-  "DivStrip turns an xStock into strip PT + strip YT for one yield nonce. Chainlink CRE keeps ca_registry honest so coupons freeze correctly.";
+  "DivStrip turns an xStock into strip PT + strip YT for one yield nonce. Chainlink CRE reads the xStocks API and keeps ca_registry honest so coupons freeze correctly.";
 
 export const CURVE_SUMMARY =
-  "curve-YT discovers the forward coupon in USDC on Meteora before anyone splits. The DivStrip vault bridges bonders (lcYT) and splitters; graduation and maturity are different clocks.";
+  "Traders swap USDC→curve-YT on Meteora, then deposit into the DivStrip vault for lcYT. Graduation and maturity are different clocks; Kamino is vault-side USDC park only.";

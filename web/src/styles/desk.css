@@ -100,6 +100,19 @@
   font-size: var(--d-fs-body);
 }
 
+.desk-center .nonce-picker-trigger {
+  min-height: calc(var(--d-ctl-h) + 8px);
+  height: auto;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--d-radius);
+  background-color: var(--d-well-bg);
+  font-size: var(--d-fs-body);
+}
+
+.desk-center .nonce-picker-list {
+  border-radius: var(--d-radius);
+}
+
 .desk-center .desk-input {
   padding-inline: var(--d-sp-3);
 }

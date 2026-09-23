@@ -90,7 +90,17 @@ function ContractGraph({
               : `arch-chip arch-chip-${n.kind}`
           }
         >
-          <span className="arch-chip-kind">{n.kind}</span>
+          {n.logo ? (
+            <img
+              className="arch-chip-logo"
+              src={n.logo}
+              alt=""
+              width={36}
+              height={36}
+            />
+          ) : (
+            <span className="arch-chip-kind">{n.kind}</span>
+          )}
           <strong>{n.label}</strong>
           <span>{n.detail}</span>
         </div>

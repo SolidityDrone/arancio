@@ -59,18 +59,21 @@ yarn test:anchor
 Interactive versions of these diagrams live on the landing page at
 [`/`](web/) → **Architecture** (`#architecture`).
 
+Brand marks used below live in [`docs/diagrams/brand/`](docs/diagrams/brand/).
+
 ### 1 — Split path: oracle → contracts → redeem
 
 Users deposit an xStock and receive **strip PT** (capital) + **strip YT** (yield)
-for one yield nonce. Chainlink CRE keeps `ca_registry` typed so DivStrip freezes
-the right coupon — not raw multiplier noise.
+for one yield nonce. Chainlink CRE reads the **xStocks API**, labels each CA, and
+writes `ca_registry` so DivStrip freezes the right coupon — not raw multiplier noise.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  actor CRE as Chainlink CRE
+  participant XS as xStocks API
+  participant CRE as Chainlink CRE
   participant Reg as ca_registry
-  actor User
+  participant User as Trader
   participant DS as divstrip
   participant Mkt as StripMarket PDA
   participant Ser as StripSeries (nonce n)
@@ -78,7 +81,9 @@ sequenceDiagram
   participant PT as strip PT mint
   participant YT as strip YT mint
 
-  CRE->>Reg: sync CA events (yield vs supply)
+  CRE->>XS: read CA calendar
+  XS-->>CRE: typed corporate actions
+  CRE->>Reg: sync events (yield vs supply)
   Note over Reg: tip · cum_y · current_yield_nonce
 
   User->>DS: initialize_strip / create_series
@@ -103,50 +108,51 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  subgraph Oracle
-    CRE[Chainlink CRE]
+  subgraph Offchain["Off-chain oracle path"]
+    XS["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/xstocks.svg' width='40' height='40' /><br/>xStocks API"]
+    CRE["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/chainlink.svg' width='40' height='40' /><br/>Chainlink CRE"]
   end
-  subgraph Programs
+
+  subgraph Onchain["On-chain DivStrip"]
     REG[ca_registry]
     DIV[divstrip]
-  end
-  subgraph Accounts
     M[StripMarket]
     S[StripSeries n]
     VX[xStock vault]
-  end
-  subgraph Tokens
     PT[strip PT]
     YT[strip YT]
-    XS[xStock]
+    TOK[xStock mint]
   end
 
-  CRE -->|typed CA events| REG
+  XS -->|CA calendar| CRE
+  CRE -->|typed events<br/>yield vs supply| REG
   REG -->|nonce · cum_y| DIV
   DIV --> M
   DIV --> S
-  XS -->|wrap| VX
+  TOK -->|wrap| VX
   DIV -->|mint 1:1| PT
   DIV -->|mint 1:1| YT
-  PT -->|redeem capital| XS
-  YT -->|redeem yield| XS
+  PT -->|redeem capital| TOK
+  YT -->|redeem yield| TOK
 ```
 
 ### 2 — Curve market: DBC, vault, graduation
 
 **curve-YT** is a Meteora discovery token (USDC pair) — not strip YT.
-Bonders buy via the **curve-YT vault** and receive **lcYT** shares.
+Bonders **swap USDC → curve-YT on DBC**, then **deposit curve-YT into the DivStrip
+vault** and receive **lcYT** shares. The vault does **not** pull curve-YT from
+Meteora directly — the trader’s wallet is the bridge hop.
 Graduation (DBC → DAMM) and strip maturity are **different clocks**.
-Idle vault USDC can later park in **Kamino cUSDC**; traders still pay USDC.
+Idle vault USDC can later park in **Kamino cUSDC**.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  actor Ops as Launch backend
+  participant Ops as Launch backend
   participant Met as Meteora DBC
   participant DS as divstrip
   participant Br as curve-YT vault
-  actor User as Bonder
+  participant User as Bonder
   participant DAMM as DAMM v2
   participant Kam as Kamino cUSDC
 
@@ -155,9 +161,11 @@ sequenceDiagram
   Ops->>DS: init_curve_bridge
   DS->>Br: vault ready
 
-  User->>Met: swap USDC → curve-YT
-  User->>DS: deposit_curve_yt_for_shares
-  DS->>Br: hold curve-YT / mint lcYT
+  User->>Met: 1. swap USDC → curve-YT
+  Met-->>User: curve-YT in wallet
+  User->>DS: 2. deposit_curve_yt_for_shares
+  DS->>Br: 3. vault holds curve-YT
+  DS-->>User: 4. mint lcYT
 
   Note over Met: quote reserve → migration mcap
 
@@ -173,31 +181,37 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-  subgraph Desk
-    U[Trader · USDC]
-    API[launch-service]
-  end
-  subgraph Meteora
-    DBC[DBC bonding]
-    DAMM[DAMM v2 AMM]
-  end
-  subgraph DivStrip
-    REG2[register_curve_launch]
-    BR[curve-YT vault / lcYT]
-    SW[swap strip YT ↔ curve-YT]
-  end
-  subgraph Yield
-    K[Kamino park]
+  subgraph Desk["Desk"]
+    U[Trader · pays USDC]
+    API["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/server.svg' width='40' height='40' /><br/>Launch backend"]
   end
 
-  API -->|launch pool| DBC
-  API --> REG2
-  REG2 --> BR
-  U -->|buy via vault| DBC
-  DBC -->|curve-YT| BR
-  BR -->|lcYT shares| U
-  DBC -->|migration| DAMM
-  BR -.->|idle USDC| K
+  subgraph Met["Meteora"]
+    DBC["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/meteora.svg' width='40' height='40' /><br/>DBC bonding"]
+    DAMM["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/meteora.svg' width='40' height='40' /><br/>DAMM v2"]
+  end
+
+  subgraph Div["DivStrip"]
+    DS[divstrip<br/>register + init vault]
+    BR[curve-YT vault<br/>holds curve-YT · mints lcYT]
+    SW[swap strip YT ↔ curve-YT]
+  end
+
+  subgraph Yield["Vault yield park"]
+    K["<img src='https://cdn.jsdelivr.net/gh/SolidityDrone/arancio@Rehydratation/docs/diagrams/brand/kamino.svg' width='40' height='40' /><br/>Kamino cUSDC"]
+  end
+
+  API -->|create pool| DBC
+  API -->|register_curve_launch<br/>+ init_curve_bridge| DS
+  DS --> BR
+
+  U -->|1. USDC swap| DBC
+  DBC -->|2. curve-YT to wallet| U
+  U -->|3. deposit curve-YT| BR
+  BR -->|4. mint lcYT| U
+
+  DBC -->|graduate| DAMM
+  BR -.->|park idle USDC| K
   SW --- BR
 ```
 
