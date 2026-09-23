@@ -33,6 +33,7 @@ export function Nav() {
           <NavItem href="/" end>
             Overview
           </NavItem>
+          <Link href="/#architecture">Architecture</Link>
           <NavItem href="/app">Strip desk</NavItem>
           <NavItem href="/dashboard">Dashboard</NavItem>
         </nav>

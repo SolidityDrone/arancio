@@ -40,4 +40,8 @@ pub enum DivStripError {
     UnauthorizedRegistrar,
     #[msg("canonical curve-YT launch not registered for this series")]
     LaunchNotRegistered,
+    #[msg("division by zero")]
+    DivisionByZero,
+    #[msg("min shares / assets not met")]
+    Slippage,
 }

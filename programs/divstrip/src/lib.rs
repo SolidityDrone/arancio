@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 pub mod errors;
+pub mod math;
 pub mod state;
 
 use anchor_spl::{
@@ -356,10 +357,11 @@ pub mod divstrip {
         Ok(())
     }
 
-    /// Deposit curve-YT into vault; mint liquid-curve-YT 1:1 (after Meteora buy in same tx).
+    /// Deposit curve-YT into vault; mint lcYT shares at NAV (ERC-4626 style).
     pub fn deposit_curve_yt_for_shares(
         ctx: Context<VaultShareAction>,
         curve_amount: u64,
+        min_shares: u64,
     ) -> Result<()> {
         require!(curve_amount > 0, DivStripError::ZeroAmount);
         require_keys_eq!(
@@ -372,6 +374,17 @@ pub mod divstrip {
             ctx.accounts.bridge.lc_yt_mint,
             DivStripError::BridgeMintMismatch
         );
+
+        let total_assets_before = ctx.accounts.vault_curve_yt.amount;
+        let supply = ctx.accounts.lc_yt_mint.supply;
+        let shares = math::shares_for_deposit(
+            u128::from(curve_amount),
+            u128::from(supply),
+            u128::from(total_assets_before),
+        )?;
+        let shares_u64 =
+            u64::try_from(shares).map_err(|_| error!(DivStripError::Overflow))?;
+        require!(shares_u64 >= min_shares, DivStripError::Slippage);
 
         token_interface::transfer_checked(
             CpiContext::new(
@@ -401,18 +414,19 @@ pub mod divstrip {
                 },
             )
             .with_signer(&[seeds]),
-            curve_amount,
+            shares_u64,
         )?;
 
         Ok(())
     }
 
-    /// Burn liquid-curve-YT; withdraw curve-YT 1:1 from vault (before Meteora sell in same tx).
+    /// Burn lcYT shares; withdraw proportional curve-YT (NAV redeem).
     pub fn redeem_shares_for_curve_yt(
         ctx: Context<VaultShareAction>,
-        curve_amount: u64,
+        share_amount: u64,
+        min_curve_out: u64,
     ) -> Result<()> {
-        require!(curve_amount > 0, DivStripError::ZeroAmount);
+        require!(share_amount > 0, DivStripError::ZeroAmount);
         require_keys_eq!(
             ctx.accounts.curve_yt_mint.key(),
             ctx.accounts.bridge.curve_yt_mint,
@@ -423,8 +437,19 @@ pub mod divstrip {
             ctx.accounts.bridge.lc_yt_mint,
             DivStripError::BridgeMintMismatch
         );
+
+        let total_assets = ctx.accounts.vault_curve_yt.amount;
+        let supply = ctx.accounts.lc_yt_mint.supply;
+        let curve_out = math::assets_for_shares(
+            u128::from(share_amount),
+            u128::from(supply),
+            u128::from(total_assets),
+        )?;
+        let curve_u64 =
+            u64::try_from(curve_out).map_err(|_| error!(DivStripError::Overflow))?;
+        require!(curve_u64 >= min_curve_out, DivStripError::Slippage);
         require!(
-            ctx.accounts.vault_curve_yt.amount >= curve_amount,
+            total_assets >= curve_u64,
             DivStripError::InsufficientCurveYt
         );
 
@@ -437,7 +462,7 @@ pub mod divstrip {
                     authority: ctx.accounts.user.to_account_info(),
                 },
             ),
-            curve_amount,
+            share_amount,
         )?;
 
         let series_key = ctx.accounts.series.key();
@@ -455,10 +480,38 @@ pub mod divstrip {
                 },
             )
             .with_signer(&[seeds]),
-            curve_amount,
+            curve_u64,
             ctx.accounts.curve_yt_mint.decimals,
         )?;
 
+        Ok(())
+    }
+
+    /// Donate curve-YT to vault without minting shares — raises NAV for remaining lcYT.
+    pub fn donate_curve_yt_to_vault(
+        ctx: Context<DonateCurveYt>,
+        curve_amount: u64,
+    ) -> Result<()> {
+        require!(curve_amount > 0, DivStripError::ZeroAmount);
+        require_keys_eq!(
+            ctx.accounts.curve_yt_mint.key(),
+            ctx.accounts.bridge.curve_yt_mint,
+            DivStripError::BridgeMintMismatch
+        );
+
+        token_interface::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from: ctx.accounts.donor_curve_yt.to_account_info(),
+                    mint: ctx.accounts.curve_yt_mint.to_account_info(),
+                    to: ctx.accounts.vault_curve_yt.to_account_info(),
+                    authority: ctx.accounts.donor.to_account_info(),
+                },
+            ),
+            curve_amount,
+            ctx.accounts.curve_yt_mint.decimals,
+        )?;
         Ok(())
     }
 
@@ -1084,6 +1137,53 @@ pub struct VaultShareAction<'info> {
     pub user_curve_yt: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(mut)]
     pub user_lc_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(
+        mut,
+        associated_token::mint = curve_yt_mint,
+        associated_token::authority = bridge_authority,
+        associated_token::token_program = token_program
+    )]
+    pub vault_curve_yt: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+#[derive(Accounts)]
+pub struct DonateCurveYt<'info> {
+    pub donor: Signer<'info>,
+    #[account(
+        seeds = [STRIP_SEED, market.underlying_mint.as_ref()],
+        bump = market.bump
+    )]
+    pub market: Box<Account<'info, StripMarket>>,
+    #[account(
+        seeds = [
+            SERIES_SEED,
+            market.key().as_ref(),
+            &series.yield_nonce.to_le_bytes()
+        ],
+        bump = series.bump,
+        has_one = market
+    )]
+    pub series: Box<Account<'info, StripSeries>>,
+    #[account(
+        seeds = [CURVE_BRIDGE_SEED, series.key().as_ref()],
+        bump = bridge.bump,
+        has_one = series
+    )]
+    pub bridge: Box<Account<'info, CurveYtBridge>>,
+    /// CHECK: bridge vault authority
+    #[account(
+        seeds = [CURVE_BRIDGE_SEED, series.key().as_ref()],
+        bump = bridge.bump
+    )]
+    pub bridge_authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        constraint = curve_yt_mint.key() == bridge.curve_yt_mint @ DivStripError::BridgeMintMismatch
+    )]
+    pub curve_yt_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(mut)]
+    pub donor_curve_yt: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         mut,
         associated_token::mint = curve_yt_mint,

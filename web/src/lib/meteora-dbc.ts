@@ -266,8 +266,7 @@ export async function buildMigrateToDammV2Tx(args: {
   }
 }
 
-/** localStorage helpers for launched pools */
-const LAUNCH_KEY = "divstrip.meteora.launches.v1";
+/** Session-only launched pools — not persisted (Surfpool resets would go stale). */
 
 export type StoredLaunch = {
   symbol: string;
@@ -286,31 +285,25 @@ export type StoredLaunch = {
   launchSignature?: string;
 };
 
+let launches: StoredLaunch[] = [];
+
 export function launchYieldNonce(l: StoredLaunch): number {
   return l.yieldNonce ?? l.startNonce ?? 0;
 }
 
 export function loadLaunches(): StoredLaunch[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = JSON.parse(localStorage.getItem(LAUNCH_KEY) ?? "[]") as StoredLaunch[];
-    return raw.map((l) => ({
-      ...l,
-      yieldNonce: launchYieldNonce(l),
-    }));
-  } catch {
-    return [];
-  }
+  return launches.slice();
 }
 
 export function saveLaunch(launch: StoredLaunch) {
   const nonce = launchYieldNonce(launch);
   const normalized = { ...launch, yieldNonce: nonce };
-  const all = loadLaunches().filter(
-    (l) => !(l.symbol === normalized.symbol && launchYieldNonce(l) === nonce)
-  );
-  all.unshift(normalized);
-  localStorage.setItem(LAUNCH_KEY, JSON.stringify(all.slice(0, 40)));
+  launches = [
+    normalized,
+    ...launches.filter(
+      (l) => !(l.symbol === normalized.symbol && launchYieldNonce(l) === nonce)
+    ),
+  ].slice(0, 40);
 }
 
 export function migratorUrl(pool: string) {

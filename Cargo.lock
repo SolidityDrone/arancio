@@ -2401,6 +2401,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "yield_cusdc"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+]
+
+[[package]]
 name = "zerocopy"
 version = "0.8.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"

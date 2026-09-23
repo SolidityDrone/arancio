@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArchitectureDiagrams } from "../components/ArchitectureDiagrams";
 import { ChainlinkCreBadge } from "../components/ChainlinkCreBadge";
 import { CurveYtLifecycle } from "../components/CurveYtLifecycle";
 import { Nav } from "../components/Nav";
@@ -34,6 +35,9 @@ export function LandingPage() {
                 </Link>
                 <a className="btn btn-ghost" href="#how">
                   How it works
+                </a>
+                <a className="btn btn-ghost" href="#architecture">
+                  Architecture
                 </a>
                 <a className="btn btn-ghost" href="#lifecycle">
                   curve-YT lifecycle
@@ -113,6 +117,18 @@ export function LandingPage() {
               </p>
             </div>
           </div>
+        </section>
+
+        <section className="section section-architecture" id="architecture">
+          <div className="section-rail">
+            <h2>Architecture</h2>
+            <p className="lead">
+              Two clocks, one product: the strip (PT/YT + CRE registry) and the
+              curve market (DBC → vault → graduation). Click each step to see
+              which on-chain pieces light up.
+            </p>
+          </div>
+          <ArchitectureDiagrams />
         </section>
 
         <section className="section section-lifecycle" id="lifecycle">

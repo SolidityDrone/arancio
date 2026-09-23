@@ -11,6 +11,7 @@ skip-lint = false
 divstrip = "A36nL7RVFp8KFWQdWmmS8wTnws1NoR3Vb4cbmChyhexz"
 ca_registry = "2WSNFu4xuaH55gpMRBN1p64YuiUXZzyze38ERXEy1U1z"
 arancio = "FwYP85cYksB7gHWe67CEUcYEFokikEUYGmf9ZGt8Qqgf"
+yield_cusdc = "7n7kW2mrLV8tSbriCChbTnggv1sA8nFwqGUamq65pNv8"
 
 [provider]
 cluster = "localnet"

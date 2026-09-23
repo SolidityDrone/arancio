@@ -155,7 +155,7 @@
     {
       "name": "deposit_curve_yt_for_shares",
       "docs": [
-        "Deposit curve-YT into vault; mint liquid-curve-YT 1:1 (after Meteora buy in same tx)."
+        "Deposit curve-YT into vault; mint lcYT shares at NAV (ERC-4626 style)."
       ],
       "discriminator": [
         185,
@@ -297,6 +297,217 @@
         },
         {
           "name": "user_lc_yt",
+          "writable": true
+        },
+        {
+          "name": "vault_curve_yt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "bridge_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "curve_yt_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "curve_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_shares",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "donate_curve_yt_to_vault",
+      "docs": [
+        "Donate curve-YT to vault without minting shares — raises NAV for remaining lcYT."
+      ],
+      "discriminator": [
+        137,
+        115,
+        171,
+        234,
+        180,
+        197,
+        94,
+        126
+      ],
+      "accounts": [
+        {
+          "name": "donor",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  114,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying_mint",
+                "account": "StripMarket"
+              }
+            ]
+          },
+          "relations": [
+            "series"
+          ]
+        },
+        {
+          "name": "series",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  114,
+                  105,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "series.yield_nonce",
+                "account": "StripSeries"
+              }
+            ]
+          },
+          "relations": [
+            "bridge"
+          ]
+        },
+        {
+          "name": "bridge",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bridge_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101,
+                  45,
+                  98,
+                  114,
+                  105,
+                  100,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "series"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve_yt_mint",
+          "writable": true
+        },
+        {
+          "name": "donor_curve_yt",
           "writable": true
         },
         {
@@ -964,7 +1175,7 @@
     {
       "name": "redeem_shares_for_curve_yt",
       "docs": [
-        "Burn liquid-curve-YT; withdraw curve-YT 1:1 from vault (before Meteora sell in same tx)."
+        "Burn lcYT shares; withdraw proportional curve-YT (NAV redeem)."
       ],
       "discriminator": [
         198,
@@ -1171,7 +1382,11 @@
       ],
       "args": [
         {
-          "name": "curve_amount",
+          "name": "share_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_curve_out",
           "type": "u64"
         }
       ]
@@ -2555,6 +2770,16 @@
       "code": 6018,
       "name": "LaunchNotRegistered",
       "msg": "canonical curve-YT launch not registered for this series"
+    },
+    {
+      "code": 6019,
+      "name": "DivisionByZero",
+      "msg": "division by zero"
+    },
+    {
+      "code": 6020,
+      "name": "Slippage",
+      "msg": "min shares / assets not met"
     }
   ],
   "types": [

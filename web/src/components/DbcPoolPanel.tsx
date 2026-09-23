@@ -17,12 +17,7 @@ import { appendDeskActivity } from "../lib/desk-activity";
 import { sendTransactionChecked } from "../lib/wallet-tx";
 import { formatTxError } from "../lib/tx-error";
 import { formatSimHint } from "../lib/tx-preview";
-import {
-  CURVE_YT_CALLOUT,
-  curveYtNonceLabel,
-  curveYtTicker,
-  lcYtTicker,
-} from "../lib/curve-yt-labels";
+import { curveYtTicker, lcYtTicker } from "../lib/curve-yt-labels";
 import {
   buildVaultBuyTransaction,
   buildVaultSellTransaction,
@@ -34,6 +29,7 @@ import {
   DESK_LIVE_POLL_MS,
   shouldPollLiveState,
 } from "../lib/live-poll";
+import { KaminoYieldPanel } from "./KaminoYieldPanel";
 
 type Props = {
   connection: Connection;
@@ -58,7 +54,7 @@ export function DbcPoolPanel({
   yieldNonce,
   underlyingMint,
   baseMint,
-  quoteMint,
+  quoteMint: _quoteMint,
   onActivityLogged,
   onVaultRefresh,
   onTxConfirmed,
@@ -66,7 +62,6 @@ export function DbcPoolPanel({
 }: Props) {
   const curveTicker = curveYtTicker(symbol);
   const lcTicker = lcYtTicker(symbol);
-  const curveLabel = curveYtNonceLabel(symbol, yieldNonce);
   const wallet = useWallet();
   const local = isLocalRpc(rpcEndpoint);
 
@@ -110,10 +105,8 @@ export function DbcPoolPanel({
     void refresh();
   }, [refresh, pool, symbol]);
 
-  const quoteMintPk = useMemo(
-    () => new PublicKey(quoteMint ?? DEFAULT_QUOTE_MINT.toBase58()),
-    [quoteMint]
-  );
+  /** Pool may historically store cUSDC; buyers always pay native USDC. */
+  const walletUsdcMint = DEFAULT_QUOTE_MINT;
 
   const refreshVault = useCallback(async () => {
     const curveMint = new PublicKey(baseMint);
@@ -124,7 +117,7 @@ export function DbcPoolPanel({
     if (wallet.publicKey) {
       const usdc = await fetchTokenBalance(
         connection,
-        quoteMintPk,
+        walletUsdcMint,
         wallet.publicKey
       );
       setUsdcUi(usdc.ui);
@@ -143,7 +136,7 @@ export function DbcPoolPanel({
       setUsdcUi(null);
       setLcYtRaw(0n);
     }
-  }, [connection, wallet.publicKey, seriesRef, baseMint, quoteMintPk]);
+  }, [connection, wallet.publicKey, seriesRef, baseMint, walletUsdcMint]);
 
   useEffect(() => {
     void refreshVault();
@@ -298,6 +291,7 @@ export function DbcPoolPanel({
   }
 
   const progressPct = Math.round(snapshot.quoteProgress * 100);
+  const poolQuoteLabel = QUOTE_SYMBOL;
   const inputSymbol = side === "buy" ? QUOTE_SYMBOL : lcTicker;
   const outputSymbol = side === "buy" ? lcTicker : QUOTE_SYMBOL;
   const lcYtUi = formatDbcAmountCompact(lcYtRaw, false);
@@ -337,18 +331,13 @@ export function DbcPoolPanel({
 
   return (
     <div className="dbc-pool-panel">
-      <p className="curve-yt-callout">
-        <span className="curve-yt-tag">curve-YT</span>{" "}
-        <span className="mono">{curveLabel}</span>
-        <span className="curve-yt-callout-detail">{CURVE_YT_CALLOUT}</span>
-      </p>
       <dl className="dbc-pool-stats">
         <div>
           <dt>Phase</dt>
           <dd>
             {snapshot.isMigrated
-              ? "DAMM v2 (graduated)"
-              : `DBC bonding · ${progressPct}%`}
+              ? "Graduated · DAMM v2"
+              : `Bonding · ${progressPct}%`}
           </dd>
         </div>
         <div>
@@ -364,7 +353,7 @@ export function DbcPoolPanel({
           </dd>
         </div>
         <div>
-          <dt>Pool {QUOTE_SYMBOL}</dt>
+          <dt>Pool {poolQuoteLabel}</dt>
           <dd className="mono" title={snapshot.quoteReserveUi}>
             {poolUsdcUi}
           </dd>
@@ -486,6 +475,13 @@ export function DbcPoolPanel({
           Refresh
         </button>
       </div>
+
+      <KaminoYieldPanel
+        connection={connection}
+        rpcEndpoint={rpcEndpoint}
+        wallet={wallet.publicKey}
+        refreshKey={vaultRefreshKey}
+      />
     </div>
   );
 }

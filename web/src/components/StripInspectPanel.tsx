@@ -233,45 +233,6 @@ export function StripInspectPanel({
 
       <div className="desk-card-body desk-inspect-body">
         <div className="desk-block desk-block-compact">
-          {legsLoading ? (
-            <div
-              className="desk-skeleton inspect-positions-skeleton"
-              aria-label="Loading positions"
-            />
-          ) : portfolioRows.length > 0 ? (
-            <ul className="inspect-positions-list" aria-label="Your strip positions">
-              {portfolioRows.map((row) => {
-                const rowPhase = seriesPhase(tipNonce, row.yieldNonce);
-                const dateLabel = maturityLabel(row.yieldNonce);
-                const selected = row.yieldNonce === inspectNonce;
-                return (
-                  <li key={row.yieldNonce}>
-                    <button
-                      type="button"
-                      className={`inspect-position-row${selected ? " selected" : ""}`}
-                      aria-pressed={selected}
-                      onClick={() => onSelectInspect(row.yieldNonce)}
-                    >
-                      <span className="inspect-position-main">
-                        <span className="inspect-position-nonce mono">
-                          {formatYieldNonceWindowLabel(
-                            row.yieldNonce,
-                            maturitySchedule
-                          )}
-                        </span>
-                        <LegStatusBadge phase={rowPhase} />
-                      </span>
-                      <span className="inspect-position-meta mono">
-                        PT {row.ptAmount} · YT {row.ytAmount}
-                        {dateLabel ? ` · ${dateLabel}` : ""}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
-
           <div className="inspect-econ-slot">
             <div className="inspect-econ-head">
               <span className="inspect-window-range mono">
@@ -338,6 +299,56 @@ export function StripInspectPanel({
             )}
           </div>
 
+          {legsLoading ? (
+            <div
+              className="desk-skeleton inspect-positions-skeleton"
+              aria-label="Loading positions"
+            />
+          ) : portfolioRows.length > 0 ? (
+            <div className="desk-field">
+              <span className="desk-field-label">All positions</span>
+              <ul
+                className="inspect-positions-list"
+                aria-label="Your strip positions"
+              >
+                {portfolioRows.map((row) => {
+                  const rowPhase = seriesPhase(tipNonce, row.yieldNonce);
+                  const dateLabel = maturityLabel(row.yieldNonce);
+                  const selected = row.yieldNonce === inspectNonce;
+                  return (
+                    <li key={row.yieldNonce}>
+                      <button
+                        type="button"
+                        className={`inspect-position-row${selected ? " selected" : ""}`}
+                        aria-pressed={selected}
+                        onClick={() => onSelectInspect(row.yieldNonce)}
+                      >
+                        <span className="inspect-position-main">
+                          <span className="inspect-position-nonce mono">
+                            {formatYieldNonceWindowLabel(
+                              row.yieldNonce,
+                              maturitySchedule
+                            )}
+                          </span>
+                          <LegStatusBadge phase={rowPhase} />
+                        </span>
+                        <span className="inspect-position-meta mono">
+                          PT {row.ptAmount} · YT {row.ytAmount}
+                          {dateLabel ? ` · ${dateLabel}` : ""}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : (
+            <p className="hint inspect-empty">
+              No strip positions for {symbol} yet. Split {symbol} to mint PT +
+              YT.
+            </p>
+          )}
+
           {activeRow?.seriesExists && phase === "mature" ? (
             <div className="inspect-actions">
               <p className="inspect-actions-label">Redeem legs</p>
@@ -383,18 +394,26 @@ export function StripInspectPanel({
   );
 
   const marketBand = (
-    <section className="desk-market-row" aria-labelledby="market-heading">
+    <section
+      className="desk-card desk-card-market"
+      aria-labelledby="market-heading"
+    >
       <header className="desk-card-head">
         <span className="desk-card-step" aria-hidden>
           3
         </span>
-        <div>
-          <h2 id="market-heading">curve-YT market · Meteora DBC</h2>
+        <div className="desk-card-head-text">
+          <h2 id="market-heading">curve-YT market</h2>
+          <p className="desk-card-sub" title={CURVE_YT_CALLOUT}>
+            Meteora DBC ·{" "}
+            <span className="mono">{curveYtNonceLabel(symbol, inspectNonce)}</span>{" "}
+            · pool token for USDC price discovery, not strip YT
+          </p>
         </div>
       </header>
-      <div className="desk-market-body">
-      <div className="inspect-market-grid">
-        <div className="inspect-curve-stack">
+      <div className="desk-card-body desk-market-body">
+      <div className="desk-market-grid">
+        <div className="desk-market-chart">
           <CurvePolicyBand
             compact
             placeholder={!poolLive}
@@ -431,7 +450,7 @@ export function StripInspectPanel({
             }
           />
         </div>
-        <div className="inspect-meteora">
+        <div className="desk-market-trade">
           {verifiedLaunch ? (
             <DbcPoolPanel
               key={`${symbol}-${verifiedLaunch.pool}`}
@@ -454,7 +473,6 @@ export function StripInspectPanel({
                 No curve-YT pool for{" "}
                 {curveYtNonceLabel(symbol, inspectNonce)}.
               </p>
-              <p className="hint curve-yt-empty-note">{CURVE_YT_CALLOUT}</p>
               {launchRegisteredOnChain ? (
                 <p className="hint">
                   Pool registered on-chain — refresh or check Surfpool if the
@@ -489,8 +507,13 @@ export function StripInspectPanel({
         </div>
       </div>
         {verifiedLaunch ? (
-          <div className="desk-curve-vault-wrap">
-            <h4 className="desk-lifecycle-title">Exit strip YT → USDC</h4>
+          <section
+            className="desk-subsection"
+            aria-labelledby="vault-heading"
+          >
+            <h3 id="vault-heading" className="desk-subsection-title">
+              Vault &amp; strip exit
+            </h3>
             <CurveYtVaultPanel
               key={`${symbol}-${verifiedLaunch.pool}-vault`}
               connection={connection}
@@ -508,7 +531,7 @@ export function StripInspectPanel({
               onActivityLogged={onDeskActivity}
               onTxConfirmed={onTxConfirmed}
             />
-          </div>
+          </section>
         ) : null}
       </div>
     </section>

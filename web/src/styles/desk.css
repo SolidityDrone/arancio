@@ -1,0 +1,958 @@
+/*
+ * Strip desk — center workspace design layer.
+ * Loaded after global.css; every rule is scoped to `.desk-center` so the
+ * landing page, dashboard, and desk sidebars keep their own styles.
+ */
+
+.desk-center {
+  /* Type scale — five steps, nothing in the center goes outside it. */
+  --d-fs-label: 0.6875rem; /* 11px — uppercase labels, tabs, badges */
+  --d-fs-hint: 0.75rem; /* 12px — helper text, meta, footers */
+  --d-fs-body: 0.8125rem; /* 13px — body copy, buttons, selects */
+  --d-fs-value: 0.9375rem; /* 15px — data values */
+  --d-fs-metric: 1.125rem; /* 18px — headline metrics, amount inputs */
+
+  /* 4px spacing grid. */
+  --d-sp-1: 4px;
+  --d-sp-2: 8px;
+  --d-sp-3: 12px;
+  --d-sp-4: 16px;
+  --d-sp-5: 20px;
+  --d-sp-6: 24px;
+
+  --d-ctl-h: 40px;
+  --d-ctl-h-sm: 32px;
+  --d-radius: 2px;
+
+  --d-card-bg: rgba(4, 10, 7, 0.88);
+  --d-head-bg: rgba(20, 241, 149, 0.035);
+  --d-well-bg: rgba(0, 0, 0, 0.32);
+  --d-tile-bg: rgba(255, 255, 255, 0.018);
+}
+
+.desk-center-inner {
+  container: desk / inline-size;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--d-sp-5) var(--d-sp-6) var(--d-sp-6);
+}
+
+.desk-center .desk-workspace {
+  gap: var(--d-sp-4);
+}
+
+/* ── Shared primitives ─────────────────────────────────────────── */
+
+.desk-center .hint {
+  margin: 0;
+  font-size: var(--d-fs-hint);
+  line-height: 1.5;
+}
+
+.desk-center .mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.desk-center .desk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.desk-center .desk-field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--d-sp-3);
+  min-width: 0;
+}
+
+.desk-center .desk-field-label,
+.desk-center .inspect-actions-label,
+.desk-center .split-section-label,
+.desk-center .desk-block-title {
+  margin: 0;
+  font-size: var(--d-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.desk-center .desk-field-aside {
+  min-width: 0;
+  font-size: var(--d-fs-hint);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.desk-center .desk-input,
+.desk-center .desk-select {
+  height: var(--d-ctl-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: var(--d-radius);
+  background-color: var(--d-well-bg);
+  font-size: var(--d-fs-body);
+}
+
+.desk-center .desk-input {
+  padding-inline: var(--d-sp-3);
+}
+
+.desk-center .btn {
+  min-height: var(--d-ctl-h);
+  padding: 0 var(--d-sp-4);
+  border-radius: var(--d-radius);
+  font-size: var(--d-fs-body);
+  letter-spacing: 0.06em;
+}
+
+.desk-center .btn-primary {
+  box-shadow: 0 0 20px rgba(20, 241, 149, 0.22);
+}
+
+.desk-center .btn-primary:hover:not(:disabled) {
+  box-shadow: 0 0 28px rgba(20, 241, 149, 0.36);
+}
+
+.desk-center .btn-sm {
+  min-height: var(--d-ctl-h-sm);
+  padding: 0 var(--d-sp-3) !important;
+  font-size: var(--d-fs-label) !important;
+}
+
+.desk-center .desk-cta {
+  width: 100%;
+  min-height: 44px;
+  margin-top: auto;
+}
+
+.desk-center .leg-phase {
+  padding: 2px 6px;
+  font-size: 0.625rem;
+  line-height: 1.4;
+}
+
+/* Data tiles: every label/value pair in the center uses this look. */
+.desk-center .inspect-econ-strip > div,
+.desk-center .dbc-pool-stats > div,
+.desk-center .kamino-yield-panel__stats > div,
+.desk-center .curve-vault-summary-grid > div,
+.desk-center .curve-policy-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--d-sp-1);
+  min-width: 0;
+  padding: 10px var(--d-sp-3);
+  border: 1px solid var(--line);
+  background: var(--d-tile-bg);
+}
+
+.desk-center .inspect-econ-strip dt,
+.desk-center .dbc-pool-stats dt,
+.desk-center .kamino-yield-panel__stats dt,
+.desk-center .curve-vault-summary-grid dt,
+.desk-center .curve-policy-metric-label {
+  margin: 0;
+  font-size: var(--d-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.desk-center .inspect-econ-strip dd,
+.desk-center .dbc-pool-stats dd,
+.desk-center .kamino-yield-panel__stats dd,
+.desk-center .curve-vault-summary-grid dd,
+.desk-center .curve-policy-metric-value {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--d-fs-value);
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.desk-center .dbc-pool-stats dd code {
+  font-size: var(--d-fs-hint);
+  color: var(--muted);
+}
+
+/* ── Token bar ─────────────────────────────────────────────────── */
+
+.desk-center .desk-token-bar {
+  min-height: 0;
+  padding: var(--d-sp-4) var(--d-sp-5);
+  column-gap: var(--d-sp-6);
+  background: var(--d-card-bg);
+}
+
+.desk-center .desk-token-bar-id {
+  gap: var(--d-sp-3);
+}
+
+.desk-center .desk-token-bar .selected-market-sym {
+  font-size: var(--d-fs-metric);
+}
+
+.desk-center .desk-token-bar .selected-market-meta {
+  min-height: 0;
+  margin-top: 2px;
+  font-size: var(--d-fs-hint);
+  line-height: 1.35;
+}
+
+.desk-center .desk-token-metrics {
+  gap: var(--d-sp-3) var(--d-sp-6);
+}
+
+.desk-center .desk-token-metrics > div {
+  gap: 6px;
+  min-width: 4.5rem;
+}
+
+.desk-center .desk-token-metrics dt {
+  font-size: var(--d-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.desk-center .desk-token-metrics dd {
+  font-size: var(--d-fs-metric);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────── */
+
+.desk-center .desk-card {
+  background: var(--d-card-bg);
+}
+
+.desk-center .desk-card-head {
+  gap: var(--d-sp-3);
+  min-height: 52px;
+  padding: var(--d-sp-3) var(--d-sp-4);
+  background: var(--d-head-bg);
+}
+
+.desk-center .desk-card-step {
+  width: 24px;
+  height: 24px;
+  font-size: var(--d-fs-hint);
+}
+
+.desk-center .desk-card-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.desk-center .desk-card-head h2 {
+  font-size: var(--d-fs-body);
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+}
+
+.desk-center .desk-card-sub {
+  margin: 0;
+  font-size: var(--d-fs-hint);
+  line-height: 1.35;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.desk-center .desk-card-body {
+  gap: var(--d-sp-4);
+  padding: var(--d-sp-4);
+}
+
+.desk-center .desk-card-foot {
+  padding: var(--d-sp-2) var(--d-sp-4);
+  font-size: var(--d-fs-hint);
+  line-height: 1.4;
+}
+
+.desk-center .desk-block {
+  gap: var(--d-sp-4);
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* ── Row 1: split + positions ──────────────────────────────────── */
+
+.desk-center .desk-primary-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.desk-center .desk-primary-split {
+  border-right: 1px solid var(--line);
+}
+
+.desk-center .desk-split-body,
+.desk-center .desk-inspect-body {
+  flex: 1;
+}
+
+.desk-center .desk-primary-split .desk-block-compact,
+.desk-center .desk-primary-inspect .desk-block-compact {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--d-sp-4);
+  min-height: 0;
+}
+
+.desk-center .strip-amount-row {
+  align-items: center;
+  gap: var(--d-sp-2);
+  height: 48px;
+  padding: 0 var(--d-sp-2) 0 var(--d-sp-3);
+  border: 1px solid var(--line-hi);
+  border-radius: var(--d-radius);
+  background: var(--d-well-bg);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.desk-center .strip-amount-row:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.desk-center .strip-amount-row input {
+  height: 100%;
+  padding: 0;
+  font-size: var(--d-fs-metric);
+}
+
+.desk-center .strip-amount-unit {
+  font-size: var(--d-fs-body);
+}
+
+.desk-center .strip-amount-max {
+  height: 28px;
+  padding: 0 var(--d-sp-2);
+  border-radius: var(--d-radius);
+  font-size: var(--d-fs-label);
+}
+
+.desk-center .split-action-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--d-sp-2);
+  row-gap: 6px;
+}
+
+.desk-center .split-action-row > .split-meta {
+  font-size: var(--d-fs-hint);
+}
+
+.desk-center .split-submit {
+  min-height: 48px;
+}
+
+.desk-center .split-unwrap-block,
+.desk-center .split-exit-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--d-sp-2);
+  margin-top: 0;
+  padding-top: var(--d-sp-4);
+}
+
+.desk-center .split-section-label {
+  margin: 0;
+}
+
+/* Positions pane */
+.desk-center .inspect-econ-head {
+  gap: var(--d-sp-2);
+  margin-bottom: var(--d-sp-3);
+}
+
+.desk-center .inspect-window-range {
+  font-size: var(--d-fs-value);
+}
+
+.desk-center .inspect-holdings {
+  font-size: var(--d-fs-hint);
+}
+
+.desk-center .inspect-econ-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--d-sp-2);
+}
+
+.desk-center .inspect-econ-strip dd {
+  font-size: var(--d-fs-metric);
+  color: var(--accent);
+}
+
+.desk-center .inspect-positions-list {
+  margin: 0;
+  gap: 6px;
+}
+
+.desk-center .inspect-position-row {
+  gap: 2px;
+  padding: 10px var(--d-sp-3);
+  border-radius: var(--d-radius);
+}
+
+.desk-center .inspect-position-nonce {
+  font-size: var(--d-fs-body);
+}
+
+.desk-center .inspect-position-meta {
+  font-size: var(--d-fs-hint);
+}
+
+.desk-center .inspect-empty {
+  margin-top: auto;
+  padding: var(--d-sp-3);
+  border: 1px dashed var(--line-hi);
+  border-radius: var(--d-radius);
+  text-align: center;
+}
+
+.desk-center .inspect-actions {
+  margin-top: auto;
+  padding-top: var(--d-sp-4);
+  gap: var(--d-sp-2);
+}
+
+.desk-center .inspect-redeem-row {
+  flex-direction: row;
+  gap: var(--d-sp-2);
+}
+
+.desk-center .inspect-action-btn {
+  flex: 1;
+  width: auto;
+}
+
+.desk-center .inspect-redeem-hint {
+  margin-top: auto;
+}
+
+/* ── Row 2: curve-YT market ────────────────────────────────────── */
+
+.desk-center .desk-market-body {
+  gap: var(--d-sp-5);
+  padding: var(--d-sp-4);
+}
+
+.desk-center .desk-market-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--d-sp-4);
+  align-items: stretch;
+}
+
+@container desk (min-width: 760px) {
+  .desk-center .desk-market-grid {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
+
+.desk-center .desk-market-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--d-sp-3);
+  min-width: 0;
+}
+
+.desk-center .desk-market-chart .dbc-chart {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.desk-center .desk-market-chart .dbc-chart-head,
+.desk-center .dbc-chart-compact .dbc-chart-head {
+  margin-bottom: var(--d-sp-2);
+  font-size: var(--d-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.desk-center .desk-market-chart .dbc-chart-svg {
+  height: auto;
+  border-color: var(--line);
+  background: var(--d-well-bg);
+}
+
+.desk-center .dbc-chart-progress-pill {
+  font-size: var(--d-fs-label);
+}
+
+/* Curve policy band */
+.desk-center .curve-policy-band,
+.desk-center .curve-policy-band-compact {
+  min-height: 0;
+  padding: var(--d-sp-3);
+  border-color: var(--line);
+  background: var(--d-tile-bg);
+}
+
+.desk-center .curve-policy-head {
+  margin-bottom: var(--d-sp-3);
+}
+
+.desk-center .curve-policy-title {
+  font-size: var(--d-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.desk-center .curve-policy-status {
+  padding: 2px 6px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.desk-center .curve-policy-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--d-sp-2);
+}
+
+.desk-center .curve-policy-metric {
+  padding: var(--d-sp-2) 10px;
+  background: var(--d-well-bg);
+}
+
+.desk-center .curve-policy-metric-label {
+  margin-bottom: 0;
+}
+
+.desk-center .curve-policy-fill {
+  margin-top: var(--d-sp-3);
+  min-height: 0;
+}
+
+.desk-center .curve-policy-fill-labels {
+  margin-bottom: 6px;
+  font-size: var(--d-fs-label);
+}
+
+.desk-center .curve-policy-blocked-note {
+  font-size: var(--d-fs-hint);
+}
+
+/* Trade column */
+.desk-center .desk-market-trade {
+  display: flex;
+  flex-direction: column;
+  gap: var(--d-sp-4);
+  min-width: 0;
+  padding: var(--d-sp-4);
+  border: 1px solid var(--line-hi);
+  border-radius: var(--d-radius);
+  background: var(--d-well-bg);
+}
+
+.desk-center .desk-market-trade .dbc-pool-panel {
+  flex: 1;
+  gap: var(--d-sp-4);
+  min-height: 0;
+}
+
+.desk-center .dbc-pool-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--d-sp-2);
+}
+
+@container desk (min-width: 1000px) {
+  .desk-center .dbc-pool-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.desk-center .dbc-pool-stats > div {
+  flex: initial;
+}
+
+.desk-center .dbc-swap-tabs {
+  gap: 0;
+  border: 1px solid var(--line-hi);
+  border-radius: var(--d-radius);
+  overflow: hidden;
+}
+
+.desk-center .dbc-swap-tabs button {
+  height: 36px;
+  padding: 0 var(--d-sp-3);
+  border: none;
+  border-radius: 0;
+  font-size: var(--d-fs-label);
+  letter-spacing: 0.08em;
+}
+
+.desk-center .dbc-swap-tabs button + button {
+  border-left: 1px solid var(--line-hi);
+}
+
+.desk-center .dbc-swap-tabs button.active {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.desk-center .dbc-swap-form {
+  gap: 6px;
+}
+
+.desk-center .dbc-swap-input-block {
+  gap: 6px;
+}
+
+.desk-center .dbc-swap-input-row {
+  gap: var(--d-sp-2);
+}
+
+.desk-center .dbc-swap-input {
+  height: 44px;
+  font-size: var(--d-fs-value);
+}
+
+.desk-center .dbc-swap-input-row .dbc-swap-btn,
+.desk-center .dbc-swap-btn {
+  min-height: 44px;
+  padding-block: 0 !important;
+  padding-inline: var(--d-sp-4) !important;
+  font-size: var(--d-fs-label) !important;
+}
+
+.desk-center .dbc-input-balance {
+  padding: 0;
+  font-size: var(--d-fs-hint);
+  line-height: 1.3;
+}
+
+.desk-center .dbc-swap-quote-compact,
+.desk-center .dbc-swap-hint {
+  margin: 0;
+  font-size: var(--d-fs-hint);
+  line-height: 1.45;
+}
+
+.desk-center .dbc-pool-foot {
+  margin-top: auto;
+  gap: var(--d-sp-2) var(--d-sp-3);
+}
+
+.desk-center .dbc-pool-status {
+  font-size: var(--d-fs-hint);
+}
+
+.desk-center .dbc-pool-foot .btn-sm {
+  margin-left: auto;
+}
+
+.desk-center .dbc-local-note,
+.desk-center .dbc-damm-addr {
+  font-size: var(--d-fs-hint);
+}
+
+/* Empty-state for the trade column (no pool yet) */
+.desk-center .inspect-meteora-empty {
+  flex: 1;
+  justify-content: center;
+  gap: var(--d-sp-3);
+}
+
+.desk-center .inspect-meteora-actions {
+  gap: var(--d-sp-2);
+}
+
+.desk-center .curve-yt-launch-block {
+  margin: 0;
+  font-size: var(--d-fs-hint);
+}
+
+/* Kamino quote-yield strip (bottom of trade column) */
+.desk-center .kamino-yield-panel {
+  gap: var(--d-sp-2);
+  margin: 0;
+  padding: var(--d-sp-4) 0 0;
+  border-top: 1px solid var(--line);
+  border-bottom: none;
+}
+
+.desk-center .kamino-yield-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--d-sp-3);
+}
+
+.desk-center .kamino-yield-panel__head h3 {
+  margin: 0;
+  font-size: var(--d-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.desk-center .kamino-yield-panel__apy {
+  flex-shrink: 0;
+  padding: 2px var(--d-sp-2);
+  border: 1px solid rgba(20, 241, 149, 0.4);
+  border-radius: var(--d-radius);
+  background: rgba(20, 241, 149, 0.08);
+  font-size: var(--d-fs-hint);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.desk-center .kamino-yield-panel__lead {
+  margin: 0;
+  font-size: var(--d-fs-hint);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.desk-center .kamino-yield-panel__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--d-sp-2);
+  margin: 0;
+}
+
+.desk-center .kamino-yield-panel__stats > div {
+  flex: initial;
+}
+
+.desk-center .kamino-yield-panel__preview h4 {
+  font-size: var(--d-fs-label);
+  letter-spacing: 0.08em;
+}
+
+.desk-center .kamino-yield-panel__preview p {
+  margin-top: var(--d-sp-1);
+  font-size: var(--d-fs-body);
+}
+
+.desk-center .kamino-yield-panel__err {
+  font-size: var(--d-fs-hint);
+}
+
+/* ── Vault & strip exit subsection ─────────────────────────────── */
+
+.desk-center .desk-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--d-sp-3);
+  padding-top: var(--d-sp-5);
+  border-top: 1px solid var(--line);
+}
+
+.desk-center .desk-subsection-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--d-fs-hint);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.desk-center .curve-vault-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-flow: row dense;
+  gap: var(--d-sp-4);
+}
+
+.desk-center .curve-vault-panel > * {
+  grid-column: 1 / -1;
+}
+
+@container desk (min-width: 760px) {
+  .desk-center .curve-vault-panel {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  }
+
+  .desk-center .curve-vault-panel > .curve-vault-summary {
+    grid-column: 1;
+  }
+
+  .desk-center .curve-vault-panel > .curve-vault-section {
+    grid-column: 2;
+  }
+}
+
+.desk-center .curve-vault-lead {
+  margin: 0;
+  font-size: var(--d-fs-hint);
+}
+
+.desk-center .curve-vault-summary {
+  gap: var(--d-sp-3);
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.desk-center .curve-vault-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--d-sp-2);
+}
+
+@container desk (min-width: 1000px) {
+  .desk-center .curve-vault-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.desk-center .curve-vault-summary-grid > div {
+  padding: 10px var(--d-sp-3);
+}
+
+.desk-center .curve-vault-summary-warn,
+.desk-center .curve-vault-summary-loading,
+.desk-center .curve-vault-summary-empty,
+.desk-center .curve-vault-status,
+.desk-center .curve-vault-empty,
+.desk-center .curve-vault-quote-error {
+  margin: 0;
+  font-size: var(--d-fs-hint);
+}
+
+.desk-center .curve-vault-section {
+  gap: var(--d-sp-3);
+  align-self: start;
+  padding: var(--d-sp-4);
+  border: 1px solid var(--line-hi);
+  border-radius: var(--d-radius);
+  background: var(--d-well-bg);
+}
+
+.desk-center .curve-vault-section-title {
+  font-size: var(--d-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.desk-center .curve-vault-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px var(--d-sp-3);
+  border-radius: var(--d-radius);
+  font-size: var(--d-fs-body);
+}
+
+.desk-center .curve-vault-quote p {
+  margin: 0;
+}
+
+.desk-center .curve-vault-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--d-sp-2);
+}
+
+.desk-center .curve-vault-actions .btn-sm {
+  align-self: stretch;
+  min-height: var(--d-ctl-h);
+}
+
+/* ── Activity log ──────────────────────────────────────────────── */
+
+.desk-center .desk-activity {
+  margin-top: var(--d-sp-4);
+  background: var(--d-card-bg);
+}
+
+.desk-center .desk-activity-head {
+  padding: var(--d-sp-3) var(--d-sp-4);
+  background: var(--d-head-bg);
+}
+
+.desk-center .desk-activity-head h2 {
+  font-size: var(--d-fs-body);
+}
+
+.desk-center .desk-activity-head p,
+.desk-center .desk-activity-count {
+  font-size: var(--d-fs-hint);
+}
+
+.desk-center .activity-filters {
+  gap: 6px;
+  margin-top: var(--d-sp-3);
+}
+
+.desk-center .activity-filters button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--d-radius);
+  font-size: var(--d-fs-label);
+}
+
+.desk-center .activity-filter-count {
+  font-size: 0.625rem;
+}
+
+.desk-center .desk-activity-empty {
+  padding: var(--d-sp-4);
+  font-size: var(--d-fs-body);
+}
+
+.desk-center .activity-row-main {
+  padding: var(--d-sp-2) var(--d-sp-4);
+}
+
+.desk-center .activity-kind {
+  font-size: 0.625rem;
+}
+
+/* ── Narrow center (small laptops / split screens) ─────────────── */
+
+@container desk (max-width: 700px) {
+  .desk-center .desk-primary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desk-center .desk-primary-split {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .desk-center .desk-token-bar {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--d-sp-3);
+  }
+
+  .desk-center .desk-token-metrics {
+    justify-content: space-between;
+  }
+
+  .desk-center .desk-token-metrics > div {
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
+@media (max-width: 900px) {
+  .desk-center-inner {
+    padding: var(--d-sp-4) 14px var(--d-sp-5);
+  }
+}

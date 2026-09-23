@@ -250,10 +250,10 @@ export function CurveYtVaultPanel({
   return (
     <div className="curve-vault-panel">
       <p className="hint curve-vault-lead">
-        Bonders fund the vault via <strong>Buy via vault ({lcTicker})</strong>{" "}
-        above — USDC buys curve-YT on Meteora, deposits to the vault, and mints{" "}
-        {lcTicker}. Splitters swap <strong>strip YT</strong> for{" "}
-        <strong>{curveTicker}</strong> at live spot, then sell for {QUOTE_SYMBOL}.
+        <strong>Bonders</strong> fund the vault with{" "}
+        <strong>Buy via vault</strong> and receive {lcTicker}.{" "}
+        <strong>Splitters</strong> swap strip YT for {curveTicker} at spot,
+        then sell for {QUOTE_SYMBOL}.
       </p>
 
       <CurveYtVaultSummary
@@ -287,13 +287,15 @@ export function CurveYtVaultPanel({
             </p>
           ) : (
             <>
-              <p className="hint">
-                Your strip YT: {formatLegRaw(stripYtRaw)}
-              </p>
-              <label className="field">
-                <span>strip YT amount</span>
+              <label className="desk-field">
+                <span className="desk-field-row">
+                  <span className="desk-field-label">strip YT amount</span>
+                  <span className="desk-field-aside mono">
+                    Bal {formatLegRaw(stripYtRaw)}
+                  </span>
+                </span>
                 <input
-                  className="input"
+                  className="desk-input mono"
                   inputMode="decimal"
                   placeholder={`max ${formatLegRaw(stripYtRaw)}`}
                   value={exitAmountUi}

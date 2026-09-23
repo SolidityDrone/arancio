@@ -44,6 +44,7 @@ import {
   DEFAULT_QUOTE_MINT,
   QUOTE_SYMBOL,
 } from "../lib/meteora-dbc";
+import { yieldQuoteMint } from "../lib/kamino-usdc-config";
 import {
   requestPoolLaunch,
   storedLaunchFromApi,
@@ -805,7 +806,7 @@ export function AppPage() {
               config: local?.config ?? "",
               pool: chain.pool.toBase58(),
               baseMint: chain.curveYtMint.toBase58(),
-              quoteMint: DEFAULT_QUOTE_MINT.toBase58(),
+              quoteMint: local?.quoteMint ?? yieldQuoteMint().toBase58(),
               initialMarketCap:
                 chain.initialMcapUsd ?? local?.initialMarketCap ?? 5_000,
               migrationMarketCap:
@@ -1585,7 +1586,25 @@ export function AppPage() {
                     </header>
                     <div className="desk-card-body desk-split-body">
                       <div className="desk-block desk-block-compact">
-                        <div className="split-action-row">
+                        <div className="desk-field">
+                          <div className="desk-field-row">
+                            <label
+                              className="desk-field-label"
+                              htmlFor="strip-amount"
+                            >
+                              Amount
+                            </label>
+                            <span className="desk-field-aside mono">
+                              {!wallet.publicKey
+                                ? "Connect wallet"
+                                : balanceLoading
+                                  ? "Loading…"
+                                  : `Bal ${walletBalance?.uiAmountString ?? "0"}`}
+                              {notionalUsd != null
+                                ? ` · ≈ ${formatUsd(notionalUsd)}`
+                                : ""}
+                            </span>
+                          </div>
                           <div className="strip-amount-row">
                             <input
                               id="strip-amount"
@@ -1613,44 +1632,41 @@ export function AppPage() {
                               Max
                             </button>
                           </div>
-                          <button
-                            className="btn btn-primary split-submit"
+                        </div>
+
+                        <div className="desk-field">
+                          <div className="desk-field-row">
+                            <label
+                              className="desk-field-label"
+                              htmlFor="split-yield-nonce"
+                            >
+                              Strip window
+                            </label>
+                            <span className="desk-field-aside mono">
+                              Tip n{tipNonce}
+                              {isForwardNonce ? " · forward" : ""}
+                            </span>
+                          </div>
+                          <YieldNoncePicker
+                            id="split-yield-nonce"
+                            tipNonce={tipNonce}
+                            nonceMax={nonceMax}
+                            value={yieldNonce}
+                            caRows={caRows}
+                            datesLoading={caLoading || caLoadedSymbol !== symbol}
                             disabled={busy}
-                            onClick={split}
-                            type="button"
-                          >
-                            {busy ? "Working…" : `Split ${splitWindowLabel}`}
-                          </button>
-                          <p className="split-meta hint">
-                            {!wallet.publicKey
-                              ? "Connect wallet to see balance"
-                              : balanceLoading
-                                ? "Loading balance…"
-                                : `Balance ${walletBalance?.uiAmountString ?? "0"} ${market.symbol}`}
-                            {notionalUsd != null
-                              ? ` · ≈ ${formatUsd(notionalUsd)}`
-                              : ""}
-                          </p>
+                            onChange={onNonceSlider}
+                          />
                         </div>
-                        <div className="split-window-controls">
-                          <label className="desk-field" htmlFor="split-yield-nonce">
-                            <span className="desk-field-label">Strip window</span>
-                            <YieldNoncePicker
-                              id="split-yield-nonce"
-                              tipNonce={tipNonce}
-                              nonceMax={nonceMax}
-                              value={yieldNonce}
-                              caRows={caRows}
-                              datesLoading={caLoading || caLoadedSymbol !== symbol}
-                              disabled={busy}
-                              onChange={onNonceSlider}
-                            />
-                          </label>
-                          <span className="split-window-meta hint">
-                            Tip N{tipNonce}
-                            {isForwardNonce ? " · forward window" : ""}
-                          </span>
-                        </div>
+
+                        <button
+                          className="btn btn-primary desk-cta"
+                          disabled={busy}
+                          onClick={split}
+                          type="button"
+                        >
+                          {busy ? "Working…" : `Split ${splitWindowLabel}`}
+                        </button>
 
                         {splitSeriesRow?.seriesExists &&
                         splitPhase !== "mature" &&
@@ -1773,32 +1789,6 @@ export function AppPage() {
                   />
                 </div>
 
-                <StripInspectPanel
-                  part="market"
-                  connection={connection}
-                  symbol={market.symbol}
-                  mint={market.mint}
-                  tipNonce={tipNonce}
-                  underlyingDecimals={walletBalance?.decimals ?? 8}
-                  legHoldings={legHoldings}
-                  legsLoading={legsLoading}
-                  verifiedLaunch={activeLaunch}
-                  poolProgress={poolProgress}
-                  marketDataReady={marketDataReady}
-                  busy={busy}
-                  onRequestPool={requestPool}
-                  launchRegisteredOnChain={Boolean(onChainLaunch?.registered)}
-                  onSelectInspect={selectInspectNonce}
-                  inspectNonce={inspectNonce}
-                  fairCouponForNonce={fairCouponForNonce}
-                  caRows={marketDataReady ? caRows : []}
-                  avgDistributionUsd={deskAvgDistributionUsd}
-                  rpcEndpoint={connection.rpcEndpoint}
-                  deskRefreshKey={deskRefreshKey}
-                  onDeskActivity={() => setActivityVersion((v) => v + 1)}
-                  onTxConfirmed={() => refreshAfterTx()}
-                />
-
                 <footer className="desk-card-foot" aria-live="polite">
                   {status ||
                     (wallet.publicKey
@@ -1808,6 +1798,32 @@ export function AppPage() {
                       : "Connect wallet")}
                 </footer>
               </section>
+
+              <StripInspectPanel
+                part="market"
+                connection={connection}
+                symbol={market.symbol}
+                mint={market.mint}
+                tipNonce={tipNonce}
+                underlyingDecimals={walletBalance?.decimals ?? 8}
+                legHoldings={legHoldings}
+                legsLoading={legsLoading}
+                verifiedLaunch={activeLaunch}
+                poolProgress={poolProgress}
+                marketDataReady={marketDataReady}
+                busy={busy}
+                onRequestPool={requestPool}
+                launchRegisteredOnChain={Boolean(onChainLaunch?.registered)}
+                onSelectInspect={selectInspectNonce}
+                inspectNonce={inspectNonce}
+                fairCouponForNonce={fairCouponForNonce}
+                caRows={marketDataReady ? caRows : []}
+                avgDistributionUsd={deskAvgDistributionUsd}
+                rpcEndpoint={connection.rpcEndpoint}
+                deskRefreshKey={deskRefreshKey}
+                onDeskActivity={() => setActivityVersion((v) => v + 1)}
+                onTxConfirmed={() => refreshAfterTx()}
+              />
             </div>
 
             <DeskActivityLog

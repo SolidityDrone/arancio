@@ -525,12 +525,16 @@ export async function buildDepositCurveYtForSharesTransaction(
   wallet: PublicKey,
   seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
-  curveAmountRaw: bigint
+  curveAmountRaw: bigint,
+  minShares: bigint = 0n
 ): Promise<Transaction> {
   const program = programFor(connection);
   const a = curveYtVaultAccounts(wallet, seriesRef, curveYtMint);
   return program.methods
-    .depositCurveYtForShares(new BN(curveAmountRaw.toString()))
+    .depositCurveYtForShares(
+      new BN(curveAmountRaw.toString()),
+      new BN(minShares.toString())
+    )
     .accountsPartial({
       user: wallet,
       market: a.market,
@@ -553,12 +557,16 @@ export async function buildRedeemSharesForCurveTransaction(
   wallet: PublicKey,
   seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
-  curveAmountRaw: bigint
+  shareAmountRaw: bigint,
+  minCurveOut: bigint = 0n
 ): Promise<Transaction> {
   const program = programFor(connection);
   const a = curveYtVaultAccounts(wallet, seriesRef, curveYtMint);
   return program.methods
-    .redeemSharesForCurveYt(new BN(curveAmountRaw.toString()))
+    .redeemSharesForCurveYt(
+      new BN(shareAmountRaw.toString()),
+      new BN(minCurveOut.toString())
+    )
     .accountsPartial({
       user: wallet,
       market: a.market,
@@ -576,7 +584,35 @@ export async function buildRedeemSharesForCurveTransaction(
     .transaction();
 }
 
-/** Vault proxy buy: Meteora USDC→curve-YT, then deposit to vault and mint lcYT. */
+export async function buildDonateCurveYtTransaction(
+  connection: Connection,
+  donor: PublicKey,
+  seriesRef: StripSeriesRef,
+  curveYtMint: PublicKey,
+  curveAmountRaw: bigint
+): Promise<Transaction> {
+  const program = programFor(connection);
+  const a = curveYtVaultAccounts(donor, seriesRef, curveYtMint);
+  return program.methods
+    .donateCurveYtToVault(new BN(curveAmountRaw.toString()))
+    .accountsPartial({
+      donor,
+      market: a.market,
+      series: a.series,
+      bridge: a.vault,
+      bridgeAuthority: a.vault,
+      curveYtMint,
+      donorCurveYt: a.userCurveYt,
+      vaultCurveYt: a.vaultCurveYt,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .transaction();
+}
+
+/**
+ * Vault proxy buy: USDC→DBC curve-YT→vault shares (NAV mint).
+ * Kamino is vault-side inventory, not part of this user tx.
+ */
 export async function buildVaultBuyTransaction(
   connection: Connection,
   wallet: PublicKey,
@@ -585,6 +621,7 @@ export async function buildVaultBuyTransaction(
   pool: PublicKey | string,
   buyQuote: DbcSwapQuote
 ): Promise<Transaction> {
+  const tx = new Transaction();
   const swapTx = await buildDbcSwapTransaction(
     connection,
     wallet,
@@ -597,30 +634,34 @@ export async function buildVaultBuyTransaction(
     wallet,
     seriesRef,
     curveYtMint,
-    curveOut
+    curveOut,
+    0n
   );
-  const tx = new Transaction();
   tx.add(...swapTx.instructions);
   tx.add(...depositTx.instructions);
   return tx;
 }
 
-/** Vault proxy sell: redeem lcYT→curve-YT, then Meteora sell for USDC. */
+/**
+ * Vault proxy sell: redeem shares → curve-YT → DBC → USDC.
+ */
 export async function buildVaultSellTransaction(
   connection: Connection,
   wallet: PublicKey,
   seriesRef: StripSeriesRef,
   curveYtMint: PublicKey,
   pool: PublicKey | string,
-  curveAmountRaw: bigint,
+  shareAmountRaw: bigint,
   sellQuote: DbcSwapQuote
 ): Promise<Transaction> {
+  const minCurve = BigInt(sellQuote.amountIn.toString());
   const redeemTx = await buildRedeemSharesForCurveTransaction(
     connection,
     wallet,
     seriesRef,
     curveYtMint,
-    curveAmountRaw
+    shareAmountRaw,
+    minCurve
   );
   const sellTx = await buildDbcSwapTransaction(
     connection,

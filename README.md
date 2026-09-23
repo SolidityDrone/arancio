@@ -1,7 +1,7 @@
 # arancio / orange
 
-Solana workspace for Stocklana: corporate-action registry + ERC-4626-style vault
-scaffolding. DivStrip (PT/YT) builds on `ca_registry`.
+Solana workspace for Stocklana: corporate-action registry + DivStrip (PT/YT) +
+curve-YT discovery on Meteora DBC → DAMM v2. DivStrip builds on `ca_registry`.
 
 ## Toolchain
 
@@ -50,22 +50,176 @@ yarn test:anchor
 | Program | Role |
 |---------|------|
 | `ca_registry` | On-chain CA history (kind, cum factors, yield nonces) fed by CRE |
-| `divstrip` | Wrap xStock → PT + YT for a yield-nonce window; unwrap / redeem |
+| `divstrip` | Wrap xStock → PT + YT; curve-YT vault / lcYT bridge; redeem |
 | `arancio` | Named vault + share mint (ERC-4626 custody deposit) |
+| `yield_cusdc` | Local cUSDC stand-in for tests (optional; main path uses Kamino) |
+
+## Architecture (demo)
+
+Interactive versions of these diagrams live on the landing page at
+[`/`](web/) → **Architecture** (`#architecture`).
+
+### 1 — Split path: oracle → contracts → redeem
+
+Users deposit an xStock and receive **strip PT** (capital) + **strip YT** (yield)
+for one yield nonce. Chainlink CRE keeps `ca_registry` typed so DivStrip freezes
+the right coupon — not raw multiplier noise.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor CRE as Chainlink CRE
+  participant Reg as ca_registry
+  actor User
+  participant DS as divstrip
+  participant Mkt as StripMarket PDA
+  participant Ser as StripSeries (nonce n)
+  participant V as xStock vault
+  participant PT as strip PT mint
+  participant YT as strip YT mint
+
+  CRE->>Reg: sync CA events (yield vs supply)
+  Note over Reg: tip · cum_y · current_yield_nonce
+
+  User->>DS: initialize_strip / create_series
+  DS->>Mkt: market PDA
+  DS->>Ser: series for nonce n
+
+  User->>DS: wrap(amount)
+  DS->>V: lock xStock
+  DS->>PT: mint 1:1
+  DS->>YT: mint 1:1
+
+  Note over User,YT: Trade legs off-protocol or later AMMs
+
+  Reg-->>DS: tip passes n (mature at n+1)
+  User->>DS: redeem_capital / redeem_yield
+  DS->>V: unlock underlying by frozen Ys/Yt
+  DS->>PT: burn
+  DS->>YT: burn
+```
+
+**On-chain pieces (split)**
+
+```mermaid
+flowchart LR
+  subgraph Oracle
+    CRE[Chainlink CRE]
+  end
+  subgraph Programs
+    REG[ca_registry]
+    DIV[divstrip]
+  end
+  subgraph Accounts
+    M[StripMarket]
+    S[StripSeries n]
+    VX[xStock vault]
+  end
+  subgraph Tokens
+    PT[strip PT]
+    YT[strip YT]
+    XS[xStock]
+  end
+
+  CRE -->|typed CA events| REG
+  REG -->|nonce · cum_y| DIV
+  DIV --> M
+  DIV --> S
+  XS -->|wrap| VX
+  DIV -->|mint 1:1| PT
+  DIV -->|mint 1:1| YT
+  PT -->|redeem capital| XS
+  YT -->|redeem yield| XS
+```
+
+### 2 — Curve market: DBC, vault, graduation
+
+**curve-YT** is a Meteora discovery token (USDC pair) — not strip YT.
+Bonders buy via the **curve-YT vault** and receive **lcYT** shares.
+Graduation (DBC → DAMM) and strip maturity are **different clocks**.
+Idle vault USDC can later park in **Kamino cUSDC**; traders still pay USDC.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Ops as Launch backend
+  participant Met as Meteora DBC
+  participant DS as divstrip
+  participant Br as curve-YT vault
+  actor User as Bonder
+  participant DAMM as DAMM v2
+  participant Kam as Kamino cUSDC
+
+  Ops->>Met: createConfig + createPool (USDC ↔ curve-YT)
+  Ops->>DS: register_curve_launch
+  Ops->>DS: init_curve_bridge
+  DS->>Br: vault ready
+
+  User->>Met: swap USDC → curve-YT
+  User->>DS: deposit_curve_yt_for_shares
+  DS->>Br: hold curve-YT / mint lcYT
+
+  Note over Met: quote reserve → migration mcap
+
+  Met->>DAMM: graduate liquidity
+  Note over DAMM: still curve-YT ↔ USDC
+
+  opt After fill / graduation
+    Br->>Kam: park idle USDC as cUSDC
+  end
+```
+
+**System map (curve + graduation)**
+
+```mermaid
+flowchart TB
+  subgraph Desk
+    U[Trader · USDC]
+    API[launch-service]
+  end
+  subgraph Meteora
+    DBC[DBC bonding]
+    DAMM[DAMM v2 AMM]
+  end
+  subgraph DivStrip
+    REG2[register_curve_launch]
+    BR[curve-YT vault / lcYT]
+    SW[swap strip YT ↔ curve-YT]
+  end
+  subgraph Yield
+    K[Kamino park]
+  end
+
+  API -->|launch pool| DBC
+  API --> REG2
+  REG2 --> BR
+  U -->|buy via vault| DBC
+  DBC -->|curve-YT| BR
+  BR -->|lcYT shares| U
+  DBC -->|migration| DAMM
+  BR -.->|idle USDC| K
+  SW --- BR
+```
+
+### Two clocks
+
+| Clock | What ends it | Where |
+|-------|----------------|-------|
+| Bonding / graduation | Quote fill hits migration mcap | Meteora DBC → DAMM |
+| Strip maturity | Registry tip passes yield nonce n | DivStrip + `ca_registry` |
 
 ## DivStrip web desk
 
 Stocklana-styled landing + strip UI at `http://127.0.0.1:3000` (`yarn web` or `cd web && npm run dev`).
 
-- `/` — PT/YT overview + Meteora DBC→DAMM use case
-- `/app` — Split xStock → PT/YT, then **Launch YT on Meteora DBC** (graduates to DAMM v2)
+- `/` — overview, **Architecture** diagrams, curve-YT lifecycle, CRE story
+- `/app` — Split xStock → PT/YT, launch curve-YT on Meteora DBC, vault buy/sell
 
 Wallets: **Phantom or Solflare** (sign txs in-app). See
 [`REPRODUCE_SURFPOOL.md`](REPRODUCE_SURFPOOL.md) for RPC, funding, and registry seed steps.
 
-Meteora curve: initial mcap ≈ f(fair coupon `1 − Yₛ/Yₜ`), migration ≈ 10×, quote WSOL.
+Meteora curve: initial mcap ≈ f(fair coupon `1 − Yₛ/Yₜ`), migration ≈ 10×, quote **USDC**.
 Requires Surfpool `--network mainnet` so DBC program
 `dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN` is on the fork.
 
-Kamino lending is **not** integrated. Jupiter program id remains in the arancio
-address book for a later swap path.
+Vault-side yield park uses **Kamino** main-market cUSDC (users still trade USDC on the desk).

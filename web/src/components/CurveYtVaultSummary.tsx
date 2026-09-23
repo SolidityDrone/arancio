@@ -47,13 +47,6 @@ export function CurveYtVaultSummary({ metrics, loading }: Props) {
 
   return (
     <div className="curve-vault-summary">
-      <p className="hint curve-vault-summary-lead">
-        <strong>Bonders</strong> fill the vault (buy lcYT above).{" "}
-        <strong>Splitters</strong> swap strip YT for curve-YT from the vault,
-        then sell curve-YT for {QUOTE_SYMBOL} on Meteora. Use the exit form
-        below for a live quote.
-      </p>
-
       <dl className="curve-vault-summary-grid">
         <div>
           <dt>Pool {QUOTE_SYMBOL}</dt>
@@ -64,7 +57,7 @@ export function CurveYtVaultSummary({ metrics, loading }: Props) {
           <dd className="mono">{poolCurve}</dd>
         </div>
         <div>
-          <dt>Vault curve-YT (splitter fuel)</dt>
+          <dt title="curve-YT available for splitter exits">Vault curve-YT</dt>
           <dd className="mono">{vaultCurve}</dd>
         </div>
         <div>
@@ -72,7 +65,7 @@ export function CurveYtVaultSummary({ metrics, loading }: Props) {
           <dd className="mono">{vaultStrip}</dd>
         </div>
         <div>
-          <dt>Spot {QUOTE_SYMBOL} / curve-YT</dt>
+          <dt>Spot {QUOTE_SYMBOL}/cYT</dt>
           <dd className="mono">
             {spot != null && spot > 0 ? spot.toFixed(6) : "—"}
           </dd>
@@ -86,7 +79,7 @@ export function CurveYtVaultSummary({ metrics, loading }: Props) {
           </dd>
         </div>
         <div>
-          <dt>Fair adj (now / launch)</dt>
+          <dt title="Fair coupon now vs at launch">Fair adj</dt>
           <dd className="mono">{(metrics.fairMultiplier * 100).toFixed(1)}%</dd>
         </div>
         {metrics.vaultPda ? (

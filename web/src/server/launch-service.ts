@@ -17,6 +17,15 @@ import {
   buildRegisterCurveLaunchTransaction,
 } from "../lib/strip-vault-tx";
 import { computeCurvePolicy } from "../lib/curve-policy";
+import {
+  buildInitializeCusdcReserveTransaction,
+  isCusdcReserveInitialized,
+} from "../lib/yield-cusdc";
+import {
+  isKaminoUsdcReserveLive,
+  isKaminoYieldBackend,
+  yieldQuoteMint,
+} from "../lib/kamino-usdc";
 
 export type LaunchRequest = {
   mint: string;
@@ -125,6 +134,23 @@ export async function executeLaunch(
 
   const seriesRef = { underlyingMint, yieldNonce };
 
+  if (isKaminoYieldBackend()) {
+    if (!(await isKaminoUsdcReserveLive(connection))) {
+      throw new Error(
+        "Kamino USDC reserve not readable on RPC — use a mainnet Surfpool fork (not --offline)"
+      );
+    }
+  } else if (!(await isCusdcReserveInitialized(connection, DEFAULT_QUOTE_MINT))) {
+    const initCusdc = await buildInitializeCusdcReserveTransaction(
+      connection,
+      payer.publicKey,
+      DEFAULT_QUOTE_MINT
+    );
+    initCusdc.feePayer = payer.publicKey;
+    await sendAndConfirmTransaction(connection, initCusdc, [payer]);
+  }
+  const quoteMint = yieldQuoteMint(DEFAULT_QUOTE_MINT);
+
   const ensureTx = await buildEnsureStripSeriesTransaction(
     connection,
     payer.publicKey,
@@ -139,7 +165,7 @@ export async function executeLaunch(
   const launch = await buildLaunchYtOnDbc({
     connection,
     payer: payer.publicKey,
-    quoteMint: DEFAULT_QUOTE_MINT,
+    quoteMint,
     launch: {
       symbol,
       yieldNonce,

@@ -1,10 +1,4 @@
-import { launchYieldNonce, loadLaunches } from "./meteora-dbc";
-import {
-  loadStripPositions,
-  positionYieldNonce,
-} from "./strip-positions";
-
-const ACTIVITY_KEY = "divstrip.desk.activity.v1";
+/** Session-only desk history — not persisted (Surfpool resets would go stale). */
 
 export type DeskActivityKind =
   | "split"
@@ -37,6 +31,8 @@ export type DeskActivity = {
   quoteMint?: string;
 };
 
+let activities: DeskActivity[] = [];
+
 export function activityYieldNonce(a: DeskActivity): number {
   return a.yieldNonce ?? a.startNonce ?? 0;
 }
@@ -46,72 +42,7 @@ function activityId(kind: DeskActivityKind, signature: string) {
 }
 
 export function loadDeskActivities(): DeskActivity[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(ACTIVITY_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as DeskActivity[];
-      return parsed.map((a) => ({
-        ...a,
-        yieldNonce: activityYieldNonce(a),
-      }));
-    }
-  } catch {
-    /* fall through to migration */
-  }
-  return migrateLegacyActivity();
-}
-
-function migrateLegacyActivity(): DeskActivity[] {
-  const merged: DeskActivity[] = [];
-  const seen = new Set<string>();
-
-  for (const p of loadStripPositions()) {
-    if (!p.signature) continue;
-    const id = activityId("split", p.signature);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const nonce = positionYieldNonce(p);
-    merged.push({
-      id,
-      kind: "split",
-      symbol: p.symbol,
-      yieldNonce: nonce,
-      startNonce: p.startNonce,
-      targetNonce: p.targetNonce,
-      at: p.splitAt,
-      signature: p.signature,
-      amount: p.amount,
-      amountSymbol: p.symbol,
-    });
-  }
-
-  for (const l of loadLaunches()) {
-    const sig = l.launchSignature ?? `pool:${l.pool}`;
-    const id = activityId("dbc_launch", sig);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const nonce = launchYieldNonce(l);
-    merged.push({
-      id,
-      kind: "dbc_launch",
-      symbol: l.symbol,
-      yieldNonce: nonce,
-      startNonce: l.startNonce,
-      targetNonce: l.targetNonce,
-      at: l.launchedAt,
-      signature: l.launchSignature ?? "",
-      pool: l.pool,
-      baseMint: l.baseMint,
-      quoteMint: l.quoteMint,
-    });
-  }
-
-  merged.sort((a, b) => b.at - a.at);
-  if (merged.length > 0) {
-    localStorage.setItem(ACTIVITY_KEY, JSON.stringify(merged.slice(0, 80)));
-  }
-  return merged;
+  return activities.slice();
 }
 
 export function appendDeskActivity(
@@ -125,9 +56,10 @@ export function appendDeskActivity(
   const nonce =
     entry.yieldNonce ?? entry.startNonce ?? activityYieldNonce(entry as DeskActivity);
   const id = entry.id ?? activityId(entry.kind, entry.signature || `${entry.at}`);
-  const all = loadDeskActivities().filter((a) => a.id !== id);
-  all.unshift({ ...entry, yieldNonce: nonce, id });
-  localStorage.setItem(ACTIVITY_KEY, JSON.stringify(all.slice(0, 80)));
+  activities = [
+    { ...entry, yieldNonce: nonce, id },
+    ...activities.filter((a) => a.id !== id),
+  ].slice(0, 80);
 }
 
 export function activitiesForSymbol(symbol: string): DeskActivity[] {
@@ -153,11 +85,11 @@ export function matchesActivityFilter(
 }
 
 export function filterActivities(
-  activities: DeskActivity[],
+  activitiesList: DeskActivity[],
   filter: ActivityFilter
 ): DeskActivity[] {
-  if (filter === "all") return activities;
-  return activities.filter((a) => matchesActivityFilter(a.kind, filter));
+  if (filter === "all") return activitiesList;
+  return activitiesList.filter((a) => matchesActivityFilter(a.kind, filter));
 }
 
 export const ACTIVITY_FILTERS: { id: ActivityFilter; label: string }[] = [

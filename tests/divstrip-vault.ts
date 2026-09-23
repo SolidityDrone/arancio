@@ -303,7 +303,7 @@ describe("divstrip curve-YT vault", () => {
     );
 
     await divstrip.methods
-      .depositCurveYtForShares(new BN(200_000))
+      .depositCurveYtForShares(new BN(200_000), new BN(0))
       .accountsPartial({
         user: wallet.publicKey,
         market,
@@ -354,7 +354,7 @@ describe("divstrip curve-YT vault", () => {
     expect(vaultCurveBal.value.amount).to.equal("100000");
 
     await divstrip.methods
-      .redeemSharesForCurveYt(new BN(50_000))
+      .redeemSharesForCurveYt(new BN(50_000), new BN(0))
       .accountsPartial({
         user: wallet.publicKey,
         market,
@@ -370,14 +370,16 @@ describe("divstrip curve-YT vault", () => {
       })
       .rpc();
 
-    const lcAfter = await connection.getTokenAccountBalance(userLcYt.address);
-    const curveAfter = await connection.getTokenAccountBalance(userCurveYt.address);
-    const vaultCurveAfter = await connection.getTokenAccountBalance(
-      vaultCurveYtAddr
-    );
-    expect(lcAfter.value.amount).to.equal("150000");
-    expect(curveAfter.value.amount).to.equal("200000");
-    expect(vaultCurveAfter.value.amount).to.equal("50000");
+    const ytBal2 = await connection.getTokenAccountBalance(userYt.address);
+    const curveBal2 = await connection.getTokenAccountBalance(userCurveYt.address);
+    const lcBal2 = await connection.getTokenAccountBalance(userLcYt.address);
+    const vaultCurveBal2 = await connection.getTokenAccountBalance(vaultCurveYtAddr);
+
+    // Redeem 50k/200k of vault (100k curve) → 25k curve out
+    expect(lcBal2.value.amount).to.equal("150000");
+    expect(vaultCurveBal2.value.amount).to.equal("75000");
+    expect(curveBal2.value.amount).to.equal("175000");
+    expect(ytBal2.value.amount).to.equal("300000");
   });
 
   it("rejects swap when curve output below minimum", async function () {
@@ -578,5 +580,265 @@ describe("divstrip curve-YT vault", () => {
       failed = true;
     }
     expect(failed).to.equal(true);
+  });
+
+  it("donate raises NAV so late deposit mints fewer shares", async function () {
+    this.timeout(180_000);
+
+    const underlying = await createMint(
+      connection,
+      wallet.payer,
+      wallet.publicKey,
+      null,
+      6,
+      undefined,
+      undefined,
+      TOKEN_PROGRAM_ID
+    );
+    const curveYtMint = await createMint(
+      connection,
+      wallet.payer,
+      wallet.publicKey,
+      null,
+      6,
+      undefined,
+      undefined,
+      TOKEN_PROGRAM_ID
+    );
+
+    const registryPda = PublicKey.findProgramAddressSync(
+      [Buffer.from("registry"), underlying.toBuffer()],
+      REGISTRY_ID
+    )[0];
+
+    await registry.methods
+      .initializeRegistry("BRG3", PublicKey.default)
+      .accountsPartial({
+        authority: wallet.publicKey,
+        mint: underlying,
+        registry: registryPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const market = PublicKey.findProgramAddressSync(
+      [Buffer.from("strip"), underlying.toBuffer()],
+      DIVSTRIP_ID
+    )[0];
+    const vaultAuthority = PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), market.toBuffer()],
+      DIVSTRIP_ID
+    )[0];
+
+    await divstrip.methods
+      .initializeStrip("BRG3", 1)
+      .accountsPartial({
+        authority: wallet.publicKey,
+        underlyingMint: underlying,
+        registry: registryPda,
+        market,
+        vaultAuthority,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const tip = await registry.account.registryLog.fetch(registryPda);
+    const yieldNonce = tip.currentYieldNonce as number;
+    const nonceBuf = Buffer.alloc(4);
+    nonceBuf.writeUInt32LE(yieldNonce);
+
+    const series = PublicKey.findProgramAddressSync(
+      [Buffer.from("series"), market.toBuffer(), nonceBuf],
+      DIVSTRIP_ID
+    )[0];
+    const ptMint = PublicKey.findProgramAddressSync(
+      [Buffer.from("pt-mint"), market.toBuffer(), nonceBuf],
+      DIVSTRIP_ID
+    )[0];
+    const ytMint = PublicKey.findProgramAddressSync(
+      [Buffer.from("yt-mint"), market.toBuffer(), nonceBuf],
+      DIVSTRIP_ID
+    )[0];
+
+    await divstrip.methods
+      .createSeries(yieldNonce)
+      .accountsPartial({
+        payer: wallet.publicKey,
+        market,
+        registry: registryPda,
+        series,
+        ptMint,
+        ytMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const launch = PublicKey.findProgramAddressSync(
+      [Buffer.from("curve-launch"), series.toBuffer()],
+      DIVSTRIP_ID
+    )[0];
+    const bridge = PublicKey.findProgramAddressSync(
+      [Buffer.from("curve-bridge"), series.toBuffer()],
+      DIVSTRIP_ID
+    )[0];
+    const lcYtMint = PublicKey.findProgramAddressSync(
+      [Buffer.from("lc-yt-mint"), series.toBuffer()],
+      DIVSTRIP_ID
+    )[0];
+    const fakePool = Keypair.generate().publicKey;
+    const vaultStripYtAddr = getAssociatedTokenAddressSync(ytMint, bridge, true);
+    const vaultCurveYtAddr = getAssociatedTokenAddressSync(
+      curveYtMint,
+      bridge,
+      true
+    );
+
+    await divstrip.methods
+      .registerCurveLaunch(
+        curveYtMint,
+        fakePool,
+        20_000,
+        new BN(5_000),
+        new BN(75_000)
+      )
+      .accountsPartial({
+        registrar: wallet.publicKey,
+        market,
+        series,
+        launch,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    await divstrip.methods
+      .initCurveBridge(curveYtMint)
+      .accountsPartial({
+        payer: wallet.publicKey,
+        market,
+        series,
+        launch,
+        bridge,
+        bridgeAuthority: bridge,
+        vaultStripYt: vaultStripYtAddr,
+        vaultCurveYt: vaultCurveYtAddr,
+        lcYtMint,
+        stripYtMint: ytMint,
+        curveYtMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const userCurveYt = await getOrCreateAssociatedTokenAccount(
+      connection,
+      wallet.payer,
+      curveYtMint,
+      wallet.publicKey
+    );
+    const userLcYt = await getOrCreateAssociatedTokenAccount(
+      connection,
+      wallet.payer,
+      lcYtMint,
+      wallet.publicKey
+    );
+    await mintTo(
+      connection,
+      wallet.payer,
+      curveYtMint,
+      userCurveYt.address,
+      wallet.publicKey,
+      300_000
+    );
+
+    // Early deposit: 100k curve → 100k shares (1:1)
+    await divstrip.methods
+      .depositCurveYtForShares(new BN(100_000), new BN(0))
+      .accountsPartial({
+        user: wallet.publicKey,
+        market,
+        series,
+        bridge,
+        bridgeAuthority: bridge,
+        curveYtMint,
+        lcYtMint,
+        userCurveYt: userCurveYt.address,
+        userLcYt: userLcYt.address,
+        vaultCurveYt: vaultCurveYtAddr,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    // Graduation surplus: donate 100k curve without minting shares → NAV 2.0
+    await divstrip.methods
+      .donateCurveYtToVault(new BN(100_000))
+      .accountsPartial({
+        donor: wallet.publicKey,
+        market,
+        series,
+        bridge,
+        bridgeAuthority: bridge,
+        curveYtMint,
+        donorCurveYt: userCurveYt.address,
+        vaultCurveYt: vaultCurveYtAddr,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const vaultAfterDonate = await connection.getTokenAccountBalance(
+      vaultCurveYtAddr
+    );
+    const lcAfterDonate = await connection.getTokenAccountBalance(
+      userLcYt.address
+    );
+    expect(vaultAfterDonate.value.amount).to.equal("200000");
+    expect(lcAfterDonate.value.amount).to.equal("100000");
+
+    // Late deposit of another 100k curve at NAV 2 → only 50k new shares
+    await divstrip.methods
+      .depositCurveYtForShares(new BN(100_000), new BN(0))
+      .accountsPartial({
+        user: wallet.publicKey,
+        market,
+        series,
+        bridge,
+        bridgeAuthority: bridge,
+        curveYtMint,
+        lcYtMint,
+        userCurveYt: userCurveYt.address,
+        userLcYt: userLcYt.address,
+        vaultCurveYt: vaultCurveYtAddr,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const lcFinal = await connection.getTokenAccountBalance(userLcYt.address);
+    const vaultFinal = await connection.getTokenAccountBalance(vaultCurveYtAddr);
+    expect(lcFinal.value.amount).to.equal("150000");
+    expect(vaultFinal.value.amount).to.equal("300000");
+
+    // Redeem all 150k shares → get full 300k curve (NAV preserved)
+    await divstrip.methods
+      .redeemSharesForCurveYt(new BN(150_000), new BN(300_000))
+      .accountsPartial({
+        user: wallet.publicKey,
+        market,
+        series,
+        bridge,
+        bridgeAuthority: bridge,
+        curveYtMint,
+        lcYtMint,
+        userCurveYt: userCurveYt.address,
+        userLcYt: userLcYt.address,
+        vaultCurveYt: vaultCurveYtAddr,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const vaultEmpty = await connection.getTokenAccountBalance(vaultCurveYtAddr);
+    const lcEmpty = await connection.getTokenAccountBalance(userLcYt.address);
+    expect(vaultEmpty.value.amount).to.equal("0");
+    expect(lcEmpty.value.amount).to.equal("0");
   });
 });

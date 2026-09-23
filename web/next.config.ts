@@ -8,7 +8,11 @@ const nextConfig: NextConfig = {
     // Anchor IDL account names are loosely typed in strip-vault-tx / wallet-tx.
     ignoreBuildErrors: true,
   },
-  serverExternalPackages: ["@meteora-ag/dynamic-bonding-curve-sdk"],
+  serverExternalPackages: [
+    "@meteora-ag/dynamic-bonding-curve-sdk",
+    "@kamino-finance/klend-sdk",
+    "@solana/kit",
+  ],
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,
