@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Providers } from "./providers";
 import "@/styles/global.css";
 import "@/styles/desk.css";
+import "@/styles/solana.css";
 
 export const metadata: Metadata = {
   title: "DivStrip_ — xStocks PT / YT",

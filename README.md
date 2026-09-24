@@ -1,30 +1,114 @@
-# arancio / orange
+# DivStrip
 
-Solana workspace for Stocklana: corporate-action registry + DivStrip (PT/YT) +
-curve-YT discovery on Meteora DBC → DAMM v2. DivStrip builds on `ca_registry`.
+**Split tokenized stocks on Solana. Trade the dividend window.**
 
-## Toolchain
+**DivStrip** is the protocol and demo stack for **Stocklana** (tokenized **xStocks**):
 
-- Anchor CLI: 1.1.2
-- Solana CLI: 3.1.10
-- Surfpool: 1.5.0
-- Node.js with Yarn 1.x
+- **`ca_registry`** — on-chain corporate-action history (Chainlink CRE → registry)
+- **`divstrip`** — wrap xStock into **strip PT** (capital) + **strip YT** (yield); **curve-YT** vault on Meteora DBC → DAMM v2
+
+This repository contains the Anchor programs, CRE workflow, and the **DivStrip web desk** (`web/`).
+
+> **Demo disclaimer:** Run DivStrip on a **local [Surfpool](https://docs.surfpool.run/) fork** only (mainnet *state*, **local RPC**). Not production mainnet. Funded SOL/USDC/xStocks exist **only on your fork**. Judges: **[Judge quick start (~3 min after install)](#judge-quick-start)**.
+
+> **Repo note:** Git clone folder may be named `orange`; shell env vars use the `ARANCIO_*` prefix from earlier development — they only configure local Surfpool/RPC for this DivStrip demo.
+
+## Judge quick start
+
+**Goal:** Surfpool running → programs deployed → your wallet funded → desk at [http://127.0.0.1:3000/app](http://127.0.0.1:3000/app).
+
+**Need more detail?** Full guide: [`REPRODUCE_SURFPOOL.md`](REPRODUCE_SURFPOOL.md) (WSL RPC, CRE sync, troubleshooting).
+
+### 0 — Install once
+
+| Tool | Version (repo) | Install |
+|------|----------------|---------|
+| **Node.js** | 18+ | [nodejs.org](https://nodejs.org/) |
+| **Yarn** | 1.x | `npm i -g yarn` |
+| **Rust + Solana CLI** | 3.1.10 | [Solana install](https://docs.anza.xyz/cli/install) |
+| **Anchor** | 1.1.2 | [Anchor avm](https://www.anchor-lang.com/docs/installation) (`avm install 1.1.2 && avm use 1.1.2`) |
+| **Surfpool** | 1.5.0 | [Surfpool docs](https://docs.surfpool.run/) |
 
 ```bash
+git clone <this-repo> divstrip && cd divstrip
 yarn install
+cd web && npm install && cd ..
 ```
 
-## Reproduce locally (Surfpool + web desk)
+### 1 — Wallet (before deploy)
 
-**Full step-by-step:** [`REPRODUCE_SURFPOOL.md`](REPRODUCE_SURFPOOL.md)
+Use **Phantom** or **Backpack** (either is fine for local demo).
 
-Covers Surfpool start, deploy, seed `ca_registry` for KOx, launch the web app,
-Phantom/Solflare signing, WSL RPC, and wallet funding on the fork.
+1. Install the browser extension ([Phantom](https://phantom.app/) · [Backpack](https://backpack.app/)).
+2. Turn on **Developer mode** in wallet settings (Phantom: *Settings → Developer Settings*; Backpack: *Settings → Developer mode*).
+3. Add a **custom RPC** pointing at Surfpool:
+
+   | Field | Value |
+   |-------|--------|
+   | **RPC URL** | `http://127.0.0.1:8899` |
+   | **Network** | Solana |
+
+   **WSL2:** if the browser is on Windows and Surfpool runs in Linux, use your WSL IP instead of `127.0.0.1` (see [`REPRODUCE_SURFPOOL.md`](REPRODUCE_SURFPOOL.md)).
+
+4. Copy your wallet **public address** (base58). You will pass it to the deploy script so the fork funds **your** wallet with demo SOL, USDC, and desk xStocks.
+
+The desk **Connect wallet** button supports **Phantom** and **Solflare**. If you use Backpack for RPC, connect with **Phantom or Solflare** in the app to sign transactions (same custom RPC).
+
+### 2 — Three terminals
+
+Leave **Terminal A** running the whole time.
+
+**Terminal A — start Surfpool** (mainnet fork, in-memory DB = clean slate each run):
+
+```bash
+ARANCIO_SURFPOOL_DB=:memory: ./scripts/start-surfpool.sh
+```
+
+Wait until RPC is up (`http://127.0.0.1:8899`). No exit prompt is normal — keep this terminal open.
+
+**Terminal B — deploy + seed registry + fund your wallet** (replace with your address):
+
+```bash
+./scripts/deploy-surfpool.sh <Address-To-Fund>
+```
+
+This script: points `solana` at Surfpool, builds & deploys `ca_registry` + `divstrip`, seeds `ca_registry` for desk xStocks, and funds your wallet on the fork.
+
+First run includes `anchor build` (can take several minutes). Later:
+
+```bash
+ARANCIO_SKIP_BUILD=1 ./scripts/deploy-surfpool.sh <Address-To-Fund>
+```
+
+**Terminal C — web desk:**
+
+```bash
+yarn web
+```
+
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000) → **Open strip desk** → connect wallet → try **Split** or **curve-YT** on `/app`.
+
+---
+
+## Chainlink CRE (for judges)
+
+**CRE** = [Chainlink Runtime Environment](https://docs.chain.link/cre): workflows that fetch off-chain data and deliver results on-chain (here: xStocks corporate actions → `ca_registry`).
+
+| Topic | Doc |
+|-------|-----|
+| CRE overview | [docs.chain.link/cre](https://docs.chain.link/cre) |
+| Project & workflow settings | [CRE project configuration](https://docs.chain.link/cre/reference/project-configuration) |
+| This repo’s CA sync workflow | [`xstocks-ca-sync` README](cre/orange-cre/xstocks-ca-sync/README.md) |
+
+In this repo, the **`xstocks-ca-sync`** workflow ([`cre/orange-cre/xstocks-ca-sync/`](cre/orange-cre/xstocks-ca-sync/)) reads the xStocks API, classifies yield vs supply events, and writes **`ca_registry`**. The Surfpool quick start **seeds the registry via script** so you can demo DivStrip without running CRE locally; production path uses CRE sync (see [`cre/orange-cre/xstocks-ca-sync/README.md`](cre/orange-cre/xstocks-ca-sync/README.md)).
+
+---
 
 ## Local Test RPC
 
 ```bash
 ./scripts/start-surfpool.sh
+# or: ARANCIO_SURFPOOL_DB=:memory: ./scripts/start-surfpool.sh
 ```
 
 Tests use `ARANCIO_RPC_URL` when set, otherwise `http://127.0.0.1:8899`.
@@ -45,14 +129,14 @@ ARANCIO_RPC_URL=http://127.0.0.1:8899 \
 yarn test:anchor
 ```
 
-## Programs
+## On-chain programs (DivStrip stack)
 
-| Program | Role |
-|---------|------|
-| `ca_registry` | On-chain CA history (kind, cum factors, yield nonces) fed by CRE |
-| `divstrip` | Wrap xStock → PT + YT; curve-YT vault / lcYT bridge; redeem |
-| `arancio` | Named vault + share mint (ERC-4626 custody deposit) |
-| `yield_cusdc` | Local cUSDC stand-in for tests (optional; main path uses Kamino) |
+| Program | Role in DivStrip |
+|---------|------------------|
+| **`ca_registry`** | CA timeline (yield vs supply, `cum_y`, yield nonces) — CRE-fed |
+| **`divstrip`** | Core protocol: PT/YT strip, wrap/redeem, curve-YT bridge, **lcYT** vault |
+| `yield_cusdc` | Optional local cUSDC mint for tests (demo desk uses Kamino on fork) |
+| `arancio` | Optional legacy vault program — **not required** for the DivStrip judge demo |
 
 ## Architecture (demo)
 
@@ -162,18 +246,19 @@ sequenceDiagram
 | Bonding / graduation | Quote fill hits migration mcap | Meteora DBC → DAMM |
 | Strip maturity | Registry tip passes yield nonce n | DivStrip + `ca_registry` |
 
-## DivStrip web desk
+## Web desk
 
-Stocklana-styled landing + strip UI at `http://127.0.0.1:3000` (`yarn web` or `cd web && npm run dev`).
+After [Judge quick start](#judge-quick-start): **`yarn web`** → [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 - `/` — overview, **Architecture** diagrams, curve-YT lifecycle, CRE story
 - `/app` — Split xStock → PT/YT, launch curve-YT on Meteora DBC, vault buy/sell
 
-Wallets: **Phantom or Solflare** (sign txs in-app). See
-[`REPRODUCE_SURFPOOL.md`](REPRODUCE_SURFPOOL.md) for RPC, funding, and registry seed steps.
+**Wallets:** connect **Phantom** or **Solflare** in the app; set **custom RPC** `http://127.0.0.1:8899` (Phantom/Backpack developer settings). Fund via `./scripts/deploy-surfpool.sh <Address-To-Fund>`.
 
 Meteora curve: initial mcap ≈ f(fair coupon `1 − Yₛ/Yₜ`), migration ≈ 10×, quote **USDC**.
 Requires Surfpool `--network mainnet` so DBC program
 `dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN` is on the fork.
 
 Vault-side yield park uses **Kamino** main-market cUSDC (users still trade USDC on the desk).
+
+**Extended setup:** [`REPRODUCE_SURFPOOL.md`](REPRODUCE_SURFPOOL.md)

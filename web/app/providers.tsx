@@ -1,6 +1,7 @@
 "use client";
 
 import { Buffer } from "buffer";
+import { FxLayer } from "@/components/FxLayer";
 import { WalletProviders } from "@/components/WalletProviders";
 
 if (typeof window !== "undefined") {
@@ -11,5 +12,10 @@ if (typeof window !== "undefined") {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <WalletProviders>{children}</WalletProviders>;
+  return (
+    <WalletProviders>
+      <FxLayer />
+      {children}
+    </WalletProviders>
+  );
 }

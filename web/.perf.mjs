@@ -1,0 +1,20 @@
+import { chromium } from "playwright";
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+await p.goto("http://localhost:3000/", { waitUntil: "networkidle", timeout: 90000 }).catch(() => {});
+await p.waitForTimeout(3000);
+const cdp = await p.context().newCDPSession(p);
+await cdp.send("Performance.enable");
+const sample = async (label, fn) => {
+  if (fn) await fn();
+  await p.waitForTimeout(800);
+  const a = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
+  const fps = await p.evaluate(() => new Promise((r) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 3000) requestAnimationFrame(f); else r(n / 3); }; requestAnimationFrame(f); }));
+  const z = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
+  const d = (k) => (z[k] - a[k]);
+  console.log(`${label.padEnd(12)} fps=${fps.toFixed(0)}  script=${(d("ScriptDuration") * 1000 / 3.8).toFixed(0)}ms/s  layout=${(d("LayoutDuration") * 1000 / 3.8).toFixed(0)}ms/s  style=${(d("RecalcStyleDuration") * 1000 / 3.8).toFixed(0)}ms/s  task=${(d("TaskDuration") * 1000 / 3.8).toFixed(0)}ms/s`);
+};
+await sample("hero");
+await sample("diagrams", async () => { await p.locator("#arch-split").scrollIntoViewIfNeeded(); await p.mouse.move(2, 880); });
+await sample("bottom", async () => { await p.locator(".footer").scrollIntoViewIfNeeded(); });
+await b.close();

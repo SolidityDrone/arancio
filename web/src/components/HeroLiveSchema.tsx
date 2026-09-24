@@ -77,10 +77,12 @@ export function HeroLiveSchema() {
             </div>
           </div>
 
-          <div className="hs-beam">
-            <span />
-            <span />
-            <span />
+          <div className="hs-beam" aria-hidden>
+            <span className="hs-beam-stem" />
+            <span className="hs-beam-bar" />
+            <span className="hs-beam-drop hs-beam-drop-pt" />
+            <span className="hs-beam-drop hs-beam-drop-yt" />
+            <span className="hs-beam-packet" />
           </div>
 
           <div className="hs-split">
@@ -124,6 +126,7 @@ export function HeroLiveSchema() {
             max={350}
             step={1}
             value={divBps}
+            style={{ "--p": `${(divBps / 350) * 100}%` } as React.CSSProperties}
             onChange={(e) => setDivBps(Number(e.target.value))}
             aria-valuemin={0}
             aria-valuemax={350}
@@ -135,32 +138,55 @@ export function HeroLiveSchema() {
             amounts update live.
           </p>
 
-          <dl className="hs-raw-grid">
-            <div>
-              <dt>cum_y start → end</dt>
-              <dd className="mono">
-                {cumStartUi} → {cumTargetUi}
-              </dd>
-            </div>
-            <div>
-              <dt>{DEMO_LEG_UI} PT → xStock raw</dt>
-              <dd className="mono">{ptRedeemRaw.toString()}</dd>
-            </div>
-            <div>
-              <dt>{DEMO_LEG_UI} YT → xStock raw</dt>
-              <dd className="mono">{ytRedeemRaw.toString()}</dd>
-            </div>
-            <div>
-              <dt>Pair total raw</dt>
-              <dd className="mono">
-                {totalRedeemRaw.toString()}
-                <span className="hs-raw-ui">
-                  {" "}
-                  ≈ {formatRawAmount(totalRedeemRaw, UNDERLYING_DECIMALS)} xStock
+          <div className="hs-raw">
+            <div className="hs-raw-cum">
+              <span className="hs-raw-label">cum_y start → end</span>
+              <div className="hs-raw-cum-row mono">
+                <span className="hs-raw-chip">{cumStartUi}</span>
+                <span className="hs-raw-arrow" aria-hidden>
+                  →
                 </span>
-              </dd>
+                <span className="hs-raw-chip hs-raw-chip-end">{cumTargetUi}</span>
+                <span className="hs-raw-delta">+{(divBps / 100).toFixed(2)}%</span>
+              </div>
             </div>
-          </dl>
+
+            <div className="hs-raw-legs">
+              <div className="hs-raw-leg hs-raw-leg-pt">
+                <span className="hs-raw-label">
+                  {DEMO_LEG_UI} PT → xStock raw
+                </span>
+                <strong className="mono">{ptRedeemRaw.toString()}</strong>
+              </div>
+              <div className="hs-raw-leg hs-raw-leg-yt">
+                <span className="hs-raw-label">
+                  {DEMO_LEG_UI} YT → xStock raw
+                </span>
+                <strong className="mono">{ytRedeemRaw.toString()}</strong>
+              </div>
+            </div>
+
+            <div className="hs-raw-total">
+              <div
+                className="hs-raw-split"
+                role="img"
+                aria-label={`PT ${pct(ptShare)} / YT ${pct(ytShare)} of the pair`}
+              >
+                <i style={{ width: `${ptShare * 100}%` }} className="hs-raw-split-pt" />
+                <i style={{ width: `${ytShare * 100}%` }} className="hs-raw-split-yt" />
+              </div>
+              <div className="hs-raw-total-row">
+                <span className="hs-raw-label">Pair total raw</span>
+                <span className="mono">
+                  <strong>{totalRedeemRaw.toString()}</strong>
+                  <span className="hs-raw-ui">
+                    {" "}
+                    ≈ {formatRawAmount(totalRedeemRaw, UNDERLYING_DECIMALS)} xStock
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="hs-footer">

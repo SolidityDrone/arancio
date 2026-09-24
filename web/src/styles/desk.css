@@ -24,8 +24,8 @@
   --d-ctl-h-sm: 32px;
   --d-radius: 2px;
 
-  --d-card-bg: rgba(4, 10, 7, 0.88);
-  --d-head-bg: rgba(20, 241, 149, 0.035);
+  --d-card-bg: rgba(18, 14, 34, 0.88);
+  --d-head-bg: rgba(153, 69, 255, 0.035);
   --d-well-bg: rgba(0, 0, 0, 0.32);
   --d-tile-bg: rgba(255, 255, 255, 0.018);
 }
@@ -728,7 +728,7 @@
   padding: 2px var(--d-sp-2);
   border: 1px solid rgba(20, 241, 149, 0.4);
   border-radius: var(--d-radius);
-  background: rgba(20, 241, 149, 0.08);
+  background: rgba(153, 69, 255, 0.08);
   font-size: var(--d-fs-hint);
   font-weight: 600;
   color: var(--accent);

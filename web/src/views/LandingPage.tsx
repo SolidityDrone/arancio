@@ -4,6 +4,7 @@ import { ChainlinkCreBadge } from "../components/ChainlinkCreBadge";
 import { CurveYtLifecycle } from "../components/CurveYtLifecycle";
 import { Nav } from "../components/Nav";
 import { SceneBackdrop } from "../components/SceneBackdrop";
+import { Sparkle, SparkleField } from "../components/Sparkles";
 import { StockLogo } from "../components/StockLogo";
 import { HeroLiveSchema } from "../components/HeroLiveSchema";
 import { MARKETS } from "../lib/markets";
@@ -15,6 +16,7 @@ export function LandingPage() {
 
       <section className="hero">
         <SceneBackdrop />
+        <SparkleField count={38} seed={11} minSize={9} maxSize={26} className="sparkle-field-hero" />
         <div className="shell hero-inner">
           <div className="hero-grid">
             <div className="hero-copy">
@@ -22,7 +24,14 @@ export function LandingPage() {
               <h1>
                 <span className="hero-h1-line">Split the stock.</span>
                 <span className="hero-h1-line">
-                  Trade the <em>dividend</em>.
+                  Trade the{" "}
+                  <em className="sparkle-word">
+                    dividend
+                    <Sparkle className="sparkle-glint sparkle-glint-1" />
+                    <Sparkle className="sparkle-glint sparkle-glint-2" />
+                    <Sparkle className="sparkle-glint sparkle-glint-3" />
+                  </em>
+                  .
                 </span>
               </h1>
               <p className="hero-lead">
@@ -120,18 +129,20 @@ export function LandingPage() {
         </section>
 
         <section className="section section-architecture" id="architecture">
+          <SparkleField count={18} seed={23} minSize={8} maxSize={20} className="sparkle-field-section" />
           <div className="section-rail">
             <h2>Architecture</h2>
             <p className="lead">
               Two clocks, one product: the strip (PT/YT + CRE registry) and the
-              curve market (DBC → vault → graduation). Click each step to see
-              which on-chain pieces light up.
+              curve market (DBC → vault → graduation). Each diagram plays
+              through its steps — hover to pause, click a step to jump.
             </p>
           </div>
           <ArchitectureDiagrams />
         </section>
 
         <section className="section section-lifecycle" id="lifecycle">
+          <SparkleField count={16} seed={41} minSize={8} maxSize={20} className="sparkle-field-section" />
           <div className="section-rail">
             <h2>curve-YT lifecycle</h2>
             <p className="lead">

@@ -2,11 +2,23 @@
 .surfpool/
 target/
 node_modules/
+
+# Keys & local secrets (never commit)
 *.keypair.json
+*-keypair.json
+**/id.json
+*.pem
+*.p12
 .env
 .env.*
 !.env.example
 secrets.yaml
+**/secrets.yaml
+
+# IDE / local tooling
+.cursor/
+.vscode/
+
 test-ledger/
 .yarn/
 web/dist/
