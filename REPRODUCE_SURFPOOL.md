@@ -18,12 +18,15 @@ cd /path/to/orange
 | Anchor | 1.1.2 |
 | Solana CLI | 3.1.10 |
 | Surfpool | 1.5.0 |
-| Node + Yarn | 1.x |
+| Node + npm | 18+ |
+| Chainlink CRE CLI | **Optional** — [install](https://docs.chain.link/cre/reference/cli); **not needed** if you use `./scripts/deploy-surfpool.sh` (registry seed) |
 
 ```bash
-yarn install
-cd web && npm install && cd ..
+npm install
+npm install --prefix web
 ```
+
+**CRE:** The default desk path seeds `ca_registry` on deploy — Chainlink does not need to be running (same as the hackathon demo). Use CRE only for `cre workflow simulate` / `./scripts/run-cre-xstocks-sync.sh` ([`xstocks-ca-sync` README](cre/orange-cre/xstocks-ca-sync/README.md)).
 
 Deploy wallet (default): `~/.config/solana/id.json`
 
@@ -162,7 +165,7 @@ ARANCIO_RPC_URL=http://127.0.0.1:8899 \
 ## Terminal C — web desk
 
 ```bash
-yarn web
+npm run web
 # → http://127.0.0.1:3000
 ```
 
@@ -172,7 +175,7 @@ yarn web
 Optional RPC override:
 
 ```bash
-VITE_RPC_URL=http://127.0.0.1:8899 yarn web
+NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8899 npm run web
 ```
 
 Default is already `http://127.0.0.1:8899` (`web/src/lib/markets.ts`).
@@ -329,7 +332,7 @@ ARANCIO_RPC_URL=http://127.0.0.1:8899 \
 ./scripts/fund-surfpool-wallet.sh <PHANTOM_PUBKEY>
 
 # Terminal C
-cd /path/to/orange && yarn web
+cd /path/to/orange && npm run web
 # Phantom → custom RPC http://127.0.0.1:8899 → http://127.0.0.1:3000/app
 ```
 
